@@ -380,4 +380,4 @@ export const generalRows = {
     },
     { section: "App Icon", rows: { appIcon: { title: "App Icon", description: "Shown in the Dock and the app switcher. The Dock keeps it after you quit.", keywords: ["dock icon", "logo"] } } },
   ],
-} satisfies Pick<Record<SettingsPane, SettingSection[]>, "general" | "links" | "profiles" | "sync" | "tabs" | "appearance">;
+} satisfies Pick<Record<SettingsPane, SettingSection[]>, "general" | "profiles" | "sync" | "tabs" | "appearance">;
