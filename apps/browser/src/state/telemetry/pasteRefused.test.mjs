@@ -36,37 +36,49 @@ test("a paste that finds no text records its reason, the pasteboard's type names
 });
 
 test("a keystroke the focus gate dropped records the reason and what was dropped, without type names", () => {
-  stub.emitAppEvent({ type: "pasteRefused", reason: "deadline", gateOpen: false, layout: "com.apple.keylayout.German", dropped: 2, edit: true });
+  stub.emitAppEvent({ type: "pasteRefused", reason: "deadline", gateOpen: false, layout: "com.apple.keylayout.German", dropped: 2 });
   const event = queued().at(-1);
   assert.equal(event.properties.reason, "deadline");
   assert.equal(event.properties.gate_open, false);
   assert.equal(event.properties.dropped, 2);
-  assert.equal(event.properties.edit, true);
+  assert.equal("edit" in event.properties, false);
   assert.equal(event.properties.keyboard_layout, "com.apple.keylayout.German");
   assert.equal("type_ids" in event.properties, false);
 });
 
-test("a deferred or refused menu Paste records the first responder's class", () => {
+test("a refused menu Paste records the first responder's class", () => {
   stub.emitAppEvent({ type: "pasteRefused", reason: "refused", gateOpen: true, responder: "NSTextView" });
   const event = queued().at(-1);
   assert.equal(event.properties.reason, "refused");
   assert.equal(event.properties.responder, "NSTextView");
 });
 
-test("only names are kept: anything that is not a plain type identifier is dropped, dynamic types are collapsed", () => {
+test("a deferred menu Paste records its reason, and a later one without a responder is still recorded", () => {
+  stub.emitAppEvent({ type: "pasteRefused", reason: "deferred", gateOpen: false, responder: "RCTUIPlainPasteFieldEditor" });
+  const first = queued().at(-1);
+  assert.equal(first.properties.reason, "deferred");
+  assert.equal(first.properties.gate_open, false);
+  assert.equal(first.properties.responder, "RCTUIPlainPasteFieldEditor");
+  const before = queued().length;
+  stub.emitAppEvent({ type: "pasteRefused", reason: "deferred", gateOpen: false });
+  assert.equal(queued().length, before + 1);
+  assert.equal("responder" in queued().at(-1).properties, false);
+});
+
+test("only names are kept: anything that is not a recognised type identifier becomes other, dynamic types are collapsed", () => {
   stub.emitAppEvent({
     type: "pasteRefused",
     reason: "no_text",
     gateOpen: true,
     layout: "/Users/someone/layout",
     responder: "NSTextView in /Users/someone",
-    types: ["public.html", "https://example.com/a?token=secret", "dyn.ah62d4rv4gu8y6y4grf0gn5xbrzw1gydcr7u1e3cytf2gn", "dyn.ah62d4rv4gu8y6y4", "hello, world", 7, null, "public.html"],
+    types: ["public.html", "https://example.com/a?token=secret", "dyn.ah62d4rv4gu8y6y4grf0gn5xbrzw1gydcr7u1e3cytf2gn", "dyn.ah62d4rv4gu8y6y4", "public.data /Users/alice/private", "/Users/alice/private", "hello, world", 7, null, "public.html", "text/html", "Apple PNG pasteboard type", "CorePasteboardFlavorType 0x54455854"],
   });
   const event = queued().at(-1);
-  assert.equal(event.properties.type_ids, "public.html,dyn");
+  assert.equal(event.properties.type_ids, "public.html,other,dyn,text/html,Apple PNG pasteboard type,CorePasteboardFlavorType 0x54455854");
   assert.equal("keyboard_layout" in event.properties, false);
   assert.equal("responder" in event.properties, false);
-  assert.doesNotMatch(JSON.stringify(event), /example\.com|secret|Users/);
+  assert.doesNotMatch(JSON.stringify(event), /example\.com|secret|Users|alice/);
 });
 
 test("an unknown reason is recorded as unknown and the type list is capped", () => {

@@ -37,9 +37,10 @@ enum PasteRefusal {
   }
 
   static func reportMenuPaste(_ action: Selector, _ reason: Refusal) {
-    guard pasteActions.contains(action), !reportedResponder else { return }
+    guard pasteActions.contains(action) else { return }
     let responder = NSApp.keyWindow?.firstResponder
     if reason == .refused, !MainMenu.editsText(responder) { return }
+    guard !reportedResponder else { return report(reason) }
     reportedResponder = true
     report(reason, ["responder": responder.map { String(describing: type(of: $0)) } ?? "nil"])
   }

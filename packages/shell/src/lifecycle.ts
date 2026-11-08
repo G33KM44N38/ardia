@@ -22,7 +22,6 @@ export type AppEvent =
       types?: string[];
       responder?: string;
       dropped?: number;
-      edit?: boolean;
     };
 
 export type AppearanceMode = "auto" | "light" | "dark";

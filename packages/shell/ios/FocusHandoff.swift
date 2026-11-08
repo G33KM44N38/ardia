@@ -330,7 +330,7 @@ final class FocusHandoff {
   private func refuse(_ reason: Refusal, _ inputs: [Input]) {
     note("drop \(inputs.count) \(reason.rawValue)")
     NSSound.beep()
-    PasteRefusal.report(reason, ["dropped": inputs.count, "edit": inputs.contains(where: Self.isEdit)])
+    if inputs.contains(where: Self.isEdit) { PasteRefusal.report(reason, ["dropped": inputs.count]) }
   }
 
   private static func isEdit(_ input: Input) -> Bool {
