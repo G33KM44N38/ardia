@@ -7,11 +7,12 @@ public class SharedFoldersModule: Module {
   private var watcher: SharedFolderWatcher?
 
   public func definition() -> ModuleDefinition {
-    Name("ArdiaSharedFolders")
+    Name(Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true ? "ArdiaRoutingSharedFoldersUnavailable" : "ArdiaSharedFolders")
 
     Events("onChange")
 
     OnCreate { [weak self] in
+      guard Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool != true else { return }
       self?.watcher = SharedFolderWatcher { [weak self] paths in self?.sendEvent("onChange", ["paths": paths]) }
     }
 

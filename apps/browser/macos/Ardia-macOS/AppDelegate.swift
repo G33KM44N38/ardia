@@ -27,7 +27,9 @@ final class AppDelegate: ExpoAppDelegate {
 
     super.applicationDidFinishLaunching(notification)
 
-    LegacyDockTile.repointSoon(isolatedInstance: LaunchConfig.shared.isolated)
+    if Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool != true {
+      LegacyDockTile.repointSoon(isolatedInstance: LaunchConfig.shared.isolated)
+    }
   }
 
   override func application(_ application: NSApplication, open urls: [URL]) {

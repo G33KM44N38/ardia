@@ -202,7 +202,8 @@ BOOL SignedForDistribution() {
   if ((self = [super init])) {
     _dataDirectory = StandardizedDirectory(environment[kDataDirVariable]);
     _configDirectory = _dataDirectory ? [_dataDirectory stringByAppendingPathComponent:@"config"]
-                                      : [NSHomeDirectory() stringByAppendingPathComponent:@".config/ardia"];
+                                      : [NSHomeDirectory() stringByAppendingPathComponent:
+                                          [NSBundle.mainBundle objectForInfoDictionaryKey:@"ACPersonalRoutingBuild"] ? @".config/ardia-routing" : @".config/ardia"];
     _background = BackgroundValue(environment[kBackgroundVariable]);
     const NSInteger port = Trimmed(environment[kRemoteDebuggingPortVariable] ?: @"").integerValue;
     _remoteDebuggingPort = port > 0 && port < 65536 ? @(port) : nil;

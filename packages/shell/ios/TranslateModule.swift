@@ -106,7 +106,8 @@ extension TranslateModule {
       var end = i == pieces.count - 1 ? chars.count : min(chars.count, Int((Double(seen) / Double(total) * Double(chars.count)).rounded()))
       if end < chars.count, end > start {
         let window = 12
-        if let space = (0...window).lazy.flatMap({ [end + $0, end - $0] }).first(where: { $0 > start && $0 < chars.count && chars[$0] == " " }) {
+        let candidates: [Int] = (0...window).flatMap { offset in [end + offset, end - offset] }
+        if let space = candidates.first(where: { $0 > start && $0 < chars.count && chars[$0] == " " }) {
           end = space + 1
         }
       }

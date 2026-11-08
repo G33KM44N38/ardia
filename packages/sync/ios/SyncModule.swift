@@ -9,9 +9,12 @@ public class SyncModule: Module {
   private static let work = DispatchQueue(label: "ardia.sync", qos: .utility)
 
   public func definition() -> ModuleDefinition {
-    Name("ArdiaSync")
+    Name(Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true ? "ArdiaRoutingSyncUnavailable" : "ArdiaSync")
 
-    OnCreate { Self.work.async { Self.removeTemporaryKits() } }
+    OnCreate {
+      guard Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool != true else { return }
+      Self.work.async { Self.removeTemporaryKits() }
+    }
 
     AsyncFunction("folderInfo") { (path: String?) -> [String: Any] in
       let url = path.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultFolder

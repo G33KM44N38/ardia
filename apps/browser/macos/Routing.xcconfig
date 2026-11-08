@@ -1,0 +1,4 @@
+#include "AdHoc.xcconfig"
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = YES
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) ARDIA_SDK_26

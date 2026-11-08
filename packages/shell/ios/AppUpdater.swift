@@ -156,7 +156,8 @@ public final class AppUpdater: NSObject {
   }
 
   private static var isOff: Bool {
-    LaunchConfig.shared.isolated && LaunchConfig.shared.instance("updateFeed") == nil
+    Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true ||
+      (LaunchConfig.shared.isolated && LaunchConfig.shared.instance("updateFeed") == nil)
   }
 
   private lazy var userDriver = ChannelUserDriver(
@@ -234,10 +235,12 @@ public final class AppUpdater: NSObject {
   }
 
   public func setAutomaticChecks(_ on: Bool) {
+    guard isConfigured else { return }
     updater.automaticallyChecksForUpdates = on
   }
 
   public func setAutomaticDownloads(_ on: Bool) {
+    guard isConfigured else { return }
     updater.automaticallyDownloadsUpdates = on
   }
 
