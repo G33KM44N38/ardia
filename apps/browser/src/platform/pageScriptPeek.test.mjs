@@ -758,6 +758,8 @@ test("a routed click says whether the link opens a tab; overlong URLs, named tar
   assert.ok(frame.gesture([frame.link("https://work.example/i", { target: "results" })], { meta: true, shift: true }).defaultPrevented);
   assert.ok(frame.gesture([frame.link("https://work.example/j")], { shift: true }).defaultPrevented);
   assert.deepEqual(routes(frame).slice(2).map((r) => [r.how, r.opens]), [["background", "tab"], ["foreground", "tab"], ["window", "page"]]);
+  env.gesture([env.link("https://work.example/k", { target: "_blank" })], { shift: true });
+  assert.deepEqual(routes(env).at(-1), { kind: "route", url: "https://work.example/k", how: "window", opens: "page", origin: "https://page.example" });
 });
 
 test("a routed click takes the page's <base target>: _blank opens a tab, a named frame stays Chrome's", () => {

@@ -57,7 +57,7 @@ the link no longer routes, JS performs the click's own open instead: a navigatio
 
 Not routed, by design: a click the page itself prevented (SPA routers), links with `download`, clicks with the Peek or
 Split modifier, ⌥-, ⌃- and middle clicks and links activated from the keyboard (native checks gestures against the left mouse-up only), plain clicks on links whose
-`target` names a frame, plain clicks on links inside frames unless they open a tab or the whole page (⌘- and ⇧-clicks route there too), URLs over 8192 characters (native
+`target` names a frame and on links inside frames that open neither a tab nor the whole page (⌘- and ⇧-clicks on either still route), URLs over 8192 characters (native
 would cut them), pages on the WebKit engine (they run WebKit's page script), forms, `location.href` assignments and other script navigations, `window.open`, and
 redirects. A matching route beats the tab's Peek links to other sites: the click routes instead of peeking. Automation hooks (`hooks.json`) decide first: a hook that drops, rewrites or routes a link from another app settles it before any route, and a cold-launch link waits for JS's link policy before native parks it. A ⇧-click or ⇧↩ to a group route opens a new window, where only a pinned group has a copy; an unpinned
 group's route opens the tab ungrouped there. Routing those needs hooks in Chrome's navigation code before the request starts (PR #87 added three Chromium

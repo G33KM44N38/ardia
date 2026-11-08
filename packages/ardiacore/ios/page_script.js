@@ -858,7 +858,7 @@
       if (defaultPrevented(e)) return;
       const url = linkUrl(link);
       if (!peekable({ link, url, path: [] }) || url.length > 8192) return;
-      const opens = metaKey(e) ? "tab" : (routedOpens(link) ?? (shiftKey(e) ? "page" : null));
+      const opens = metaKey(e) ? "tab" : shiftKey(e) ? "page" : routedOpens(link);
       if (!opens || !routed(url)) return;
       apply(preventDefault, e, []);
       send("route", { url, how, opens, origin: pageOrigin });
