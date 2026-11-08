@@ -858,10 +858,10 @@
       if (defaultPrevented(e)) return;
       const url = linkUrl(link);
       if (!peekable({ link, url, path: [] }) || url.length > 8192) return;
-      const opens = routedOpens(link);
+      const opens = metaKey(e) ? "tab" : (routedOpens(link) ?? (shiftKey(e) ? "page" : null));
       if (!opens || !routed(url)) return;
       apply(preventDefault, e, []);
-      send("route", { url, how, opens: metaKey(e) ? "tab" : opens, origin: pageOrigin });
+      send("route", { url, how, opens, origin: pageOrigin });
     };
     addEventListener(
       "click",
