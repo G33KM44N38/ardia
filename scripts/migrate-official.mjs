@@ -147,7 +147,7 @@ export const isArdiaProcess = (line) => /(?:^|\/)Ardia(?: Routing)?\.app\/Conten
 function assertStopped() {
   const processes = execFileSync("ps", ["-ax", "-o", "comm="], { encoding: "utf8" });
   if (processes.split("\n").some(isArdiaProcess))
-    throw new Error("Quit both Ardia and Ardia Routing before migration");
+    throw new Error("Quit both Ardia and Ardia Fork before migration");
   const seen = new Set();
   for (const line of processes.split("\n")) {
     if (!line.includes("/Chromium Framework.framework/")) continue;
@@ -177,7 +177,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const options = { source: join(support, officialId), destination: join(support, personalId),
       sourceConfig: join(home, ".config/ardia"), destinationConfig: join(home, ".config/ardia-routing"),
       backups: join(support, "Ardia Routing Backups"), assertStopped };
-    assertSigned("/Applications/Ardia Routing.app");
+    assertSigned("/Applications/Ardia Fork.app");
     assertStopped();
     if (process.argv[2] === "--check") {
       const result = routedSession(readJson(join(options.source, "session.json")), readJson(join(options.destination, "session.json")));

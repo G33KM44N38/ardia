@@ -15,7 +15,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Ardia Routing</string>
+	<string>Ardia Fork</string>
 	<key>ACPersonalRoutingBuild</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>
@@ -108,7 +108,7 @@
 		<string>zh_TW</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Ardia Fork</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
