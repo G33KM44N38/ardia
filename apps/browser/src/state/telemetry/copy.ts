@@ -1,5 +1,6 @@
 export const SHARING_COPY = {
   toggle: "Share anonymous crash reports and usage stats",
+  agentControl: "Agent control: approval and revocation counts, tool names, number of approved profiles, and whether scripts are allowed. No agent names, profile names, URLs, or page content.",
   summary: "Crashes, errors, rough feature counts and speed. Never the sites you visit, anything you type or search, or what's in your tabs.",
   whatsSent: "What's Sent",
   footnote:
@@ -55,6 +56,7 @@ export const WHATS_SENT: { title: string; items: string[] }[] = [
       "At launch: the chip and graphics chip names, how much memory the Mac has, how many displays and their scale, and whether the Mac decodes AV1, VP9, HEVC and H.264 video in hardware",
       "How many tab presses opened a tab, became a drag or got no answer, and how soon after opening a tab its page was clicked, summed up once an hour. Never where you clicked",
       "How many tabs and windows you open (a count, not which)",
+      SHARING_COPY.agentControl,
       "Opening split view, switching profiles and opening the command bar",
       "Opening Picture in Picture: video or page, and whether its window can show over full-screen apps",
       "Whether a profile switch came from the sidebar's profile switcher, whether it showed icons or dots, and whether it came within 2 seconds of a switcher press for a different profile (a corrected mis-click)",

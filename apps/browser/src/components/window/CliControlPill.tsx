@@ -1,3 +1,4 @@
+import { setAgentControl, useAgentControl } from "../../state/automation/agentControl";
 import { useEffect, useState } from "react";
 import { Animated, Image, StyleSheet, View, type ViewStyle } from "react-native";
 import { stopCliControl, useCliIndicator } from "../../state/app/cliControl";
@@ -13,9 +14,13 @@ const PILL_BOTTOM = 12;
 
 export function CliControlPill({ style }: { style?: Animated.WithAnimatedValue<ViewStyle> }) {
   const theme = useTheme();
-  const shown = useCliIndicator((s) => s.shown);
+  const cliShown = useCliIndicator((s) => s.shown);
+  const agents = useAgentControl(s => s.sessions);
+  const active = agents.filter(a => a.approved);
+  const shown = cliShown || active.length > 0;
   const caller = useCliIndicator((s) => s.caller);
-  const icon = useAppIcon(caller?.app ?? null);
+  const label = active.length ? `${active.length} approved agent${active.length > 1 ? "s" : ""}` : callerLabel(caller);
+  const icon = useAppIcon(active.length ? null : caller?.app ?? null);
   const { shown: mounted, appear } = usePresence(shown || null, CLI_PILL_MOTION);
   if (!mounted) return null;
   return (
@@ -29,7 +34,7 @@ export function CliControlPill({ style }: { style?: Animated.WithAnimatedValue<V
             transform: [{ translateY: appear.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }, { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }],
           }}
         >
-          <Hud shape="capsule" height={PILL_HEIGHT} accessibilityRole="alert" accessibilityLabel={`${callerLabel(caller)} is controlling Ardia`}>
+          <Hud shape="capsule" height={PILL_HEIGHT} accessibilityRole="alert" accessibilityLabel={`${label} is controlling Ardia`}>
             <View style={PILL_ROW}>
               {icon ? (
                 <Image source={{ uri: icon }} style={APP_ICON} />
@@ -40,11 +45,11 @@ export function CliControlPill({ style }: { style?: Animated.WithAnimatedValue<V
               )}
               <Text numberOfLines={1} size="small" tone="textSecondary" style={SHRINK}>
                 <Text size="small" weight="semibold">
-                  {callerLabel(caller)}
+                  {label}
                 </Text>
                 {" is controlling Ardia"}
               </Text>
-              <Button variant="pill" tone="chip" title="Stop" onPress={stopCliControl} />
+              <Button variant="pill" tone="chip" title="Stop" onPress={() => { stopCliControl(); void setAgentControl(false); }} />
             </View>
           </Hud>
         </Animated.View>

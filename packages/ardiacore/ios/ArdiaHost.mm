@@ -254,6 +254,101 @@ static void (^gQuitCancelledHandler)(void);
   return tab ? tab.tabId : -1;
 }
 
++ (void)agentPage:(NSDictionary *)request completion:(void (^)(NSDictionary *))completion {
+  NSString *operation = request[@"operation"];
+  NSString *profile = request[@"profile"];
+  NSString *tabId = request[@"tab"];
+  NSString *expectedURL = request[@"url"];
+  NSSet *operations = [NSSet setWithArray:@[@"snapshot", @"click", @"fill", @"press_key", @"scroll", @"screenshot", @"navigate", @"script"]];
+  if (![operation isKindOfClass:NSString.class] || ![operations containsObject:operation] ||
+      ![profile isKindOfClass:NSString.class] || ![tabId isKindOfClass:NSString.class] || ![expectedURL isKindOfClass:NSString.class]) {
+    completion(@{@"error": @"Invalid agent operation"}); return;
+  }
+  NSMutableDictionary *authorization = [request mutableCopy];
+  BOOL (^allowed)(void) = ^BOOL {
+    authorization[@"allowed"] = @NO;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ArdiaAgentAuthorize" object:authorization];
+    return [authorization[@"allowed"] boolValue];
+  };
+  [ArdiaServices call:@"ac_cli_control" profile:@"" args:@{} completion:^(NSDictionary *status) {
+    ArdiaCoreTab *tab = ardia_host::TabWithAppTabId(tabId);
+    BOOL (^sameTarget)(void) = ^BOOL {
+      NSURL *url = [NSURL URLWithString:tab.url ?: @""];
+      return tab && !tab.closed && !tab.discarded && ardia_host::TabWithAppTabId(tabId) == tab &&
+        tab.profile == ardia_host::Profiles()[profile] && !ardia_host::IsPrivateProfile(profile) &&
+        (tab.profile != nil) && [@[@"http", @"https"] containsObject:url.scheme.lowercaseString] &&
+        url.host.length && !url.user.length && !url.password.length && [tab.url isEqualToString:expectedURL];
+    };
+    if (![status[@"state"] isEqual:@"off"] || !allowed() || !sameTarget()) {
+      completion(@{@"error": @"Agent access refused or target changed"}); return;
+    }
+    if ([operation isEqualToString:@"navigate"]) {
+      NSString *destination = request[@"destination"];
+      NSURL *url = [destination isKindOfClass:NSString.class] ? [NSURL URLWithString:destination] : nil;
+      if (![@[@"http", @"https"] containsObject:url.scheme.lowercaseString] || !url.host.length || url.user.length || url.password.length) {
+        completion(@{@"error": @"Only HTTP and HTTPS destinations are allowed"}); return;
+      }
+      [tab loadURL:destination userInitiated:NO];
+      completion(@{@"ok": @YES}); return;
+    }
+    if ([operation isEqualToString:@"screenshot"]) {
+      [tab devToolsCall:@"Page.captureScreenshot" params:@{@"format": @"png"} timeout:2.0 completion:^(NSDictionary *shot, NSString *error) {
+        if (!allowed() || !sameTarget() || ![shot[@"data"] isKindOfClass:NSString.class]) { completion(@{@"error": @"Screenshot unavailable or access revoked"}); return; }
+        if ([shot[@"data"] length] > 3 * 1024 * 1024) { completion(@{@"error": @"Screenshot too large; reduce the window size and retry"}); return; }
+        completion(@{@"data": shot[@"data"], @"mimeType": @"image/png"});
+      }];
+      return;
+    }
+    NSMutableDictionary *payload = [request mutableCopy];
+    payload[@"snapshotId"] = NSUUID.UUID.UUIDString;
+    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+    if (!json || json.length > 65536) { completion(@{@"error": @"Agent request too large"}); return; }
+    NSString *source = [NSString stringWithUTF8String:R"JS((p=>{
+      if(location.href!==p.url || !['http:','https:'].includes(location.protocol)) return {error:'Document changed'};
+      const key='__ardiaAgent_'+p.connection;
+      if(p.operation==='snapshot') {
+        const nodes=Array.from(document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[contenteditable="true"]')).filter(e=>e.getClientRects().length).slice(0,500);
+        const id=p.snapshotId; globalThis[key]={id,nodes,document};
+        return {snapshot:id,title:document.title,url:location.href,text:(document.body?.innerText||'').slice(0,40000),elements:nodes.map((e,i)=>({ref:String(i),tag:e.tagName.toLowerCase(),role:e.getAttribute('role'),name:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||'').slice(0,300),type:e.getAttribute('type')}))};
+      }
+      const saved=globalThis[key];
+      if(!saved || saved.document!==document || saved.id!==p.snapshot) return {error:'Stale snapshot; take a new snapshot'};
+      if(p.operation==='script') return {value:Function(p.script)()};
+      const e=saved.nodes[Number(p.ref)];
+      if(p.operation==='scroll') { window.scrollBy(0,p.delta); return {ok:true}; }
+      if(!e || !e.isConnected || !e.getClientRects().length) return {error:'Element unavailable'};
+      if(p.operation==='click') { const a=e.closest('a[href]'); if(a && !['http:','https:'].includes(new URL(a.href,location.href).protocol)) return {error:'Privileged link refused'}; e.click(); return {ok:true}; }
+      if(p.operation==='fill') {
+        if(!['INPUT','TEXTAREA'].includes(e.tagName) || e.type==='file' || e.disabled || e.readOnly) return {error:'Element cannot be filled'};
+        const proto=e.tagName==='INPUT'?HTMLInputElement.prototype:HTMLTextAreaElement.prototype;
+        const setter=Object.getOwnPropertyDescriptor(proto,'value').set; setter.call(e,p.text);
+        e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true};
+      }
+      if(p.operation==='press_key') {
+        e.focus(); e.dispatchEvent(new KeyboardEvent('keydown',{key:p.key,bubbles:true}));
+        if(p.key==='Enter' && e.form) e.form.requestSubmit();
+        e.dispatchEvent(new KeyboardEvent('keyup',{key:p.key,bubbles:true}));return {ok:true};
+      }
+      return {error:'Unsupported operation'};
+    }))JS"];
+    NSString *expression = [NSString stringWithFormat:@"try { post('result', JSON.stringify(%@(%@))); } catch(e) { post('result', JSON.stringify({error:'Page operation failed'})); }", source, [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]];
+    __block BOOL settled = NO;
+    void (^finish)(NSDictionary *) = ^(NSDictionary *reply) {
+      if (settled) return;
+      settled = YES;
+      completion(reply);
+    };
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+      finish(@{@"error": @"Page operation timed out; action may have completed"});
+    });
+    [tab evaluate:expression completion:^(NSString *result) {
+      if (!allowed() || !sameTarget()) { finish(@{@"error": @"Target changed or access revoked; action may have completed"}); return; }
+      id value = result ? [NSJSONSerialization JSONObjectWithData:[result dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+      finish([value isKindOfClass:NSDictionary.class] ? value : @{@"error": @"No page result"});
+    }];
+  }];
+}
+
 + (void)cliTabTargets:(NSArray<NSString *> *)tabIds completion:(void (^)(NSDictionary<NSString *, id> *targets))completion {
   static NSMutableDictionary<NSString *, NSString *> *lastTarget;
   static NSMutableDictionary<NSString *, NSNumber *> *generations;

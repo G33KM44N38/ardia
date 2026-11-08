@@ -3,9 +3,46 @@ import Darwin
 import Foundation
 
 final class ControlSocket {
+  private static let bindLock = NSLock()
   static let shared = ControlSocket()
-  static let socketName = "ArdiaControl.sock"
-  static let lockName = "ArdiaControl.sock.lock"
+  static let agents = ControlSocket(socketName: "ArdiaAgents.sock")
+  private let socketName: String
+  private var lockName: String { socketName + ".lock" }
+  private var agentGrants: [Int: [String: Any]] = [:]
+  private var authorizationObserver: NSObjectProtocol?
+
+  init(socketName: String = "ArdiaControl.sock") {
+    self.socketName = socketName
+    if socketName == "ArdiaAgents.sock" {
+      authorizationObserver = NotificationCenter.default.addObserver(forName: NSNotification.Name("ArdiaAgentAuthorize"), object: nil, queue: nil) { [weak self] note in
+        guard let query = note.object as? NSMutableDictionary else { return }
+        self?.queue.sync { query["allowed"] = self?.allowsAgent(query) ?? false }
+      }
+    }
+  }
+
+  func grantAgent(_ connection: Int, generation: Int, profiles: [String], actions: Bool, scripts: Bool, done: @escaping (Bool) -> Void) {
+    queue.async { [self] in
+      guard self.generation == generation, connections[connection] != nil else { done(false); return }
+      agentGrants[connection] = ["profiles": profiles, "actions": actions, "scripts": scripts, "expires": Date().timeIntervalSince1970 + 3600]
+      done(true)
+    }
+  }
+
+  func revokeAgent(_ connection: Int, done: @escaping () -> Void) {
+    queue.async { [self] in agentGrants.removeValue(forKey: connection); done() }
+  }
+
+  private func allowsAgent(_ query: NSDictionary) -> Bool {
+    guard let connection = query["connection"] as? Int, let tagged = query["generation"] as? Int, tagged == generation,
+      connections[connection] != nil, let grant = agentGrants[connection],
+      let expires = grant["expires"] as? Double, expires > Date().timeIntervalSince1970,
+      let profile = query["profile"] as? String, let profiles = grant["profiles"] as? [String], profiles.contains(profile)
+    else { return false }
+    let operation = query["operation"] as? String ?? ""
+    if operation == "script" { return grant["scripts"] as? Bool == true && grant["actions"] as? Bool == true }
+    return operation == "snapshot" || operation == "screenshot" || grant["actions"] as? Bool == true
+  }
   static let maxConnections = 16
   static let maxPathBytes = 103
   static let acceptsPerCallback = 8
@@ -92,16 +129,16 @@ final class ControlSocket {
     if let bound { return status("on", path: bound.path) }
     let dir: String
     do {
-      dir = try DocumentStore.url(Self.socketName).deletingLastPathComponent().path
+      dir = try DocumentStore.url(socketName).deletingLastPathComponent().path
     } catch {
       return refuse("Ardia has no data folder.")
     }
-    let path = (dir as NSString).appendingPathComponent(Self.socketName)
+    let path = (dir as NSString).appendingPathComponent(socketName)
     if let problem = Self.unsafeFolder(dir) { return refuse(problem, path: path) }
     guard path.utf8.count <= Self.maxPathBytes else {
       return refuse("The socket path is longer than \(Self.maxPathBytes) bytes: \(path)", path: path)
     }
-    let lock = Darwin.open((dir as NSString).appendingPathComponent(Self.lockName), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+    let lock = Darwin.open((dir as NSString).appendingPathComponent(lockName), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
     guard lock >= 0 else { return refuse("Couldn't open the socket's lock file (\(Self.errnoText())).", path: path) }
     guard flock(lock, LOCK_EX | LOCK_NB) == 0 else {
       Darwin.close(lock)
@@ -129,11 +166,13 @@ final class ControlSocket {
       raw[bytes.count] = 0
     }
     address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+    Self.bindLock.lock()
     let previousMask = umask(0o177)
     let bindResult = withUnsafePointer(to: &address) {
       $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
     }
     umask(previousMask)
+    Self.bindLock.unlock()
     var made = stat()
     guard bindResult == 0, listen(fd, Int32(Self.maxConnections)) == 0, lstat(path, &made) == 0 else {
       let text = Self.errnoText()
@@ -154,6 +193,7 @@ final class ControlSocket {
   }
 
   private func stopOnQueue() {
+    agentGrants.removeAll()
     guard let bound else { return }
     self.bound = nil
     for connection in Array(connections.values) { connection.close() }
@@ -189,6 +229,7 @@ final class ControlSocket {
         },
         onClose: { [weak self] connection in
           guard let self, self.connections.removeValue(forKey: connection.id) != nil else { return }
+          self.agentGrants.removeValue(forKey: connection.id)
           self.sink?.send("onClose", ["connection": connection.id])
         },
         onWritten: { [weak self] tickets in self?.sink?.send("onWritten", ["tickets": tickets]) })

@@ -33,6 +33,7 @@ export function startDevHarness() {
   }
 
   const ac = {
+    get agentControl(): typeof import("../../state/automation/agentControl") { return require("../../state/automation/agentControl"); },
     store: useBrowser, actions, runCommand, webviews, shell, engine: { call, on }, omnibox: omniboxDrivers, pages: pagesDrivers,
     pageState: usePages,
     openSettings,

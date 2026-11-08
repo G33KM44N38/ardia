@@ -1,3 +1,4 @@
+import { AgentsSection } from "./Agents";
 import { useState } from "react";
 import { View } from "react-native";
 import { systemInfo } from "../../../state/app/system";
@@ -93,6 +94,7 @@ export function AdvancedPane() {
         </Row>
       </Group>
 
+      <AgentsSection />
       <CommandLineSection />
       <AutomationRules />
 

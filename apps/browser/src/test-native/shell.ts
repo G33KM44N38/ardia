@@ -332,7 +332,13 @@ export function writeHeldReplies() {
   const tickets = controlSocket.held.splice(0);
   if (tickets.length) controlEvents.emit("onWritten", { tickets });
 }
+export const agentSocket = { generation: 0, running: false, replies: [] as { connection: number; line: string }[], grants: [] as unknown[] };
 const automation: Modules["ArdiaAutomation"] = {
+  startAgents: async () => { agentSocket.running = true; return { state: "on", generation: ++agentSocket.generation, path: "/data/ArdiaAgents.sock" }; },
+  stopAgents: async () => { agentSocket.running = false; },
+  replyAgent: (connection, line) => { agentSocket.replies.push({ connection, line }); },
+  grantAgent: async (...args) => { agentSocket.grants.push(args); return true; },
+  revokeAgent: async () => {},
   start: async () => {
     if (!controlSocket.running) controlSocket.generation++;
     controlSocket.running = true;
