@@ -32,3 +32,17 @@ Codex reviews r1–r8 found these not to be safely fixable inside this scope:
 - **Plain keystrokes typed during the handoff.** A resigned page drops them.
 - **Edit actions while the destination is slower than 400 ms** (a very busy JS thread). They're dropped with a beep, and the next press works.
 - **Selection timing.** RN applies a text input's selection in a later UI block than its focus. The claim hops through the UIManager queue first, but a selection queued after that hop can still land after the paste.
+
+## Diagnostics: the `paste_refused` event
+Every beep in `FocusHandoff` goes through `FocusHandoff.refuse(_:_:)` with a `Refusal` reason, and the address field's `pasteFrom:` (the react-native-macos patch) and `MenuTarget` report to `PasteRefusal` (packages/shell/ios/PasteRefusal.swift). It sends a `pasteRefused` app event, and `apps/browser/src/state/telemetry/pasteRefused.ts` turns it into one `paste_refused` telemetry event. Nothing about behaviour changed: the beep, the drop and the refusal are the same as before.
+
+**Properties**
+- `reason`: `deadline`, `cancelled`, `superseded`, `stale_epoch`, `queue_full`, `no_origin`, `late_acknowledgement`, `focus_lost`, `mouse_down`, `window_left`, `no_text` (the address field found no text on the pasteboard), `deferred` or `refused` (a forwarded Paste the gate held back, or no responder took).
+- `type_ids`: the pasteboard's type identifiers for `no_text`, names only, dynamic `dyn.` types collapsed to `dyn`, at most 24.
+- `responder`: the first responder's class name, for `deferred` and `refused`, once per session.
+- `gate_open`: whether the key window had a focus gate open.
+- `keyboard_layout`: the current keyboard layout's input source id.
+- `$os_version`: the macOS version, from the common context.
+- `dropped` and `edit`: how many held inputs a gate drop took, and whether any was an edit action or an edit key.
+
+Clipboard contents are never read or sent. At most 50 events are reported per session.

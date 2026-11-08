@@ -13,7 +13,17 @@ export type AppEvent =
   | { type: "switcherReleased" }
   | { type: "switcherKey"; key: "escape" | "next" | "previous" }
   | { type: "switcherMouseUp" }
-  | { type: "dragEscape" };
+  | { type: "dragEscape" }
+  | {
+      type: "pasteRefused";
+      reason: string;
+      gateOpen: boolean;
+      layout?: string;
+      types?: string[];
+      responder?: string;
+      dropped?: number;
+      edit?: boolean;
+    };
 
 export type AppearanceMode = "auto" | "light" | "dark";
 
