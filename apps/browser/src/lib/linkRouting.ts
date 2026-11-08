@@ -148,14 +148,21 @@ export function placeDestination(destination: RouteDestination, world: RoutingWo
   }
 }
 
-export function placeExternalLink(routing: LinkRouting, url: string, world: RoutingWorld): LinkPlacement {
+export function placeByRoutes(routing: LinkRouting, url: string, world: RoutingWorld): LinkPlacement | null {
   for (const route of matchingRoutes(routing, url)) {
     const placed = placeDestination(route.destination, world);
     if (placed) return placed;
   }
+  return null;
+}
+
+export function placeByDefault(routing: LinkRouting, world: RoutingWorld): LinkPlacement {
   const fallback = routing.defaultDestination.kind === "little" ? LITTLE_ARDIA : RECENT;
   return placeDestination(routing.defaultDestination, world) ?? placeDestination(fallback, world)!;
 }
+
+export const placeExternalLink = (routing: LinkRouting, url: string, world: RoutingWorld): LinkPlacement =>
+  placeByRoutes(routing, url, world) ?? placeByDefault(routing, world);
 
 export function placeLinkFrom(routing: LinkRouting, url: string, world: RoutingWorld, sourceProfileId: string): LinkPlacement | null {
   for (const route of matchingRoutes(routing, url)) {

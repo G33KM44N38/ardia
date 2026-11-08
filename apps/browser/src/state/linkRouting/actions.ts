@@ -6,6 +6,7 @@ import type { Disposition } from "../omnibox/openFromBar";
 import type { AdoptId } from "../browser/types";
 import { isRegularWindow, isSmall, mainWindowFor } from "../windows/small";
 import { adoptOf, navigationOf } from "../tabs/pageSession";
+import { gateOpening, settleOpening, type OpeningVia } from "../tabs/openingGate";
 import { pageLinkRoutes, placeLinkFromProfile } from "./placement";
 
 const store = () => useBrowser.getState();
@@ -17,9 +18,16 @@ export type RoutedOpen = {
   adoptId?: AdoptId;
   pointer?: [number, number];
   gated?: boolean;
+  via?: OpeningVia;
 };
 
 export function openAtPlacement(placement: LinkPlacement, open: RoutedOpen): string | undefined {
+  if (!open.gated) {
+    const context = { tabId: open.from?.tabId ?? null, windowId: open.from?.windowId ?? null, profileId: placement.profileId, via: open.via ?? "typed" };
+    return settleOpening(gateOpening(open.url, context, null), null, (verdict) =>
+      verdict && "cancel" in verdict ? undefined : openAtPlacement(placement, { ...open, url: verdict?.url ?? open.url, gated: true }),
+    );
+  }
   const background = open.how === "background";
   if (placement.kind === "little") {
     store().createWindow({ kind: "small", url: open.url, profileId: placement.profileId, adoptId: open.adoptId, linkPointer: open.pointer, background });

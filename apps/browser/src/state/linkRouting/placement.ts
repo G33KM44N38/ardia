@@ -1,4 +1,4 @@
-import { groupRouteKey, pageLinkRoute, placeExternalLink, placeLinkFrom, type LinkPlacement, type PageLinkRoute, type RoutingWorld } from "../../lib/linkRouting";
+import { groupRouteKey, pageLinkRoute, placeByDefault, placeByRoutes, placeLinkFrom, type LinkPlacement, type PageLinkRoute, type RoutingWorld } from "../../lib/linkRouting";
 import type { BrowserState } from "../browser/store";
 import { isSmall, lastActiveProfile } from "../windows/small";
 
@@ -16,9 +16,10 @@ export function routingWorld(s: BrowserState): RoutingWorld {
 
 export type OtherAppPlacing = { recentProfileId?: string; withRoutes?: boolean };
 
-export function placeLinkFromOtherApp(s: BrowserState, url: string, { recentProfileId = lastActiveProfile(s), withRoutes = true }: OtherAppPlacing = {}): LinkPlacement {
-  const routing = s.settings.linkRouting;
-  return placeExternalLink(withRoutes ? routing : { ...routing, routes: [] }, url, { ...routingWorld(s), recentProfileId });
+export function placeLinkFromOtherApp(s: BrowserState, url: string, { recentProfileId = lastActiveProfile(s), withRoutes = true }: OtherAppPlacing = {}): LinkPlacement & { routed: boolean } {
+  const world = { ...routingWorld(s), recentProfileId };
+  const routed = withRoutes ? placeByRoutes(s.settings.linkRouting, url, world) : null;
+  return routed ? { ...routed, routed: true } : { ...placeByDefault(s.settings.linkRouting, world), routed: false };
 }
 
 export function placeLinkFromProfile(s: BrowserState, url: string, sourceProfileId: string, from?: LinkSource): LinkPlacement | null {

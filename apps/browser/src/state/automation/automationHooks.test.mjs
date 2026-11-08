@@ -483,6 +483,37 @@ test("a batch of links from another app places each one against the profile used
   assert.deepEqual([profileOf("https://github.com/b"), profileOf("https://plain.example/")], [work, personal]);
 });
 
+test("a batch from another app opens an explicit Little Ardia route in Little Ardia; the rest open as tabs", async () => {
+  fresh();
+  const work = S().createProfile({ name: "Work" });
+  const routes = [
+    { id: "gh", match: "contains", pattern: "github.com", destination: { kind: "profile", profileId: work } },
+    { id: "chat", match: "contains", pattern: "chat.example", destination: { kind: "little" } },
+  ];
+  S().updateSettings({ linkRouting: { routes, defaultDestination: { kind: "little" } } });
+  S().createWindow({ url: "https://a.example/" });
+  openExternalUrls(["https://github.com/c", "https://chat.example/room", "https://plain.example/"]);
+  await wait(20);
+  const windowOf = (url) => S().windows[Object.values(S().tabs).find((t) => t.url === url)?.windowId]?.kind;
+  assert.deepEqual(["https://github.com/c", "https://chat.example/room", "https://plain.example/"].map(windowOf), ["main", "small", "main"]);
+});
+
+test("a typed URL routed to Little Ardia passes tab.opening first: a cancel opens nothing, a rewrite opens the new URL", async () => {
+  const { routeTypedUrl } = await import("../linkRouting/actions.ts");
+  fresh([
+    { name: "block", on: "tab.opening", match: "https://blocked.example/*", cancel: true },
+    { name: "strip", on: "tab.opening", match: "https://chat.example/*", rewrite: [{ match: "https://chat.example/*", to: "{origin}{path}" }] },
+  ]);
+  await controlOn();
+  S().updateSettings({ linkRouting: { routes: [{ id: "l", match: "contains", pattern: ".example", destination: { kind: "little" } }], defaultDestination: { kind: "recent" } } });
+  const w = S().createWindow({ url: "https://a.example/" });
+  const smallUrls = () => Object.values(S().tabs).filter((t) => S().windows[t.windowId]?.kind === "small").map((t) => t.url);
+  assert.equal(routeTypedUrl("https://blocked.example/x", { windowId: w, disposition: "current" }), true);
+  assert.deepEqual(smallUrls(), []);
+  routeTypedUrl("https://chat.example/room?utm=1", { windowId: w, disposition: "current" });
+  assert.deepEqual(smallUrls(), ["https://chat.example/room"]);
+});
+
 test("a rewritten navigation goes out as not user-initiated; an unchanged one keeps its value", async () => {
   fresh([{ name: "strip", on: "tab.opening", match: "https://track.example/*", rewrite: [{ match: "https://track.example/*", to: "{origin}{path}" }] }]);
   const w = S().createWindow({ url: "https://a.example/" });

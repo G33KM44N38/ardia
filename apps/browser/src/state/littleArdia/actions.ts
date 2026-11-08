@@ -91,8 +91,8 @@ function openUrlsFromApps(urls: string[], routed: RoutedLinks, pointer?: [number
     const s = store();
     const placement = placeLinkFromOtherApp(s, url, { recentProfileId, withRoutes });
     const adoptId = routed.profileId !== null && engineProfile(s, placement.profileId) === engineProfile(s, routed.profileId) ? asAdoptId(routed.adoptIds[i]) : undefined;
-    if (placement.kind === "little" && urls.length === 1 && isWebPageUrl(url)) return void openLittleArdia(url, placement.profileId, adoptId, pointer);
-    main = openAtPlacement(placement.kind === "little" ? { kind: "profile", profileId: placement.profileId } : placement, { url, how: "foreground", adoptId, gated }) ?? main;
+    if (placement.kind === "little" && (urls.length === 1 || placement.routed) && isWebPageUrl(url)) return void openLittleArdia(url, placement.profileId, adoptId, pointer);
+    main = openAtPlacement(placement.kind === "little" ? { kind: "profile", profileId: placement.profileId } : placement, { url, how: "foreground", adoptId, gated, via: "external" }) ?? main;
   });
   if (main) focus(main);
 }
