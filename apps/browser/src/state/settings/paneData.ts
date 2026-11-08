@@ -27,6 +27,7 @@ import { setMenuBarShortcuts } from "../commands/commandShortcuts";
 import { currentSettings } from "../browser/current";
 import { engineProfile } from "../browser/model";
 import { currentSyncFolder, folderInfo } from "../sync/engine";
+import { officialMigrationStatus, importOfficialAccounts } from "../../platform/keychain";
 import { extensionsProfileId, refreshExtensions } from "../extensions/actions";
 import { cached, load, loadAll, need, resource, store, useAllLoaded, type Needed } from "./resources";
 import type { SettingsPane } from "./settingsWindows";
@@ -34,6 +35,8 @@ import type { SettingsPane } from "./settingsWindows";
 export const APP_ICON_SIZE = 56;
 
 export const loginItem = resource("loginItem", () => launchAtLoginStatus().catch(() => "notRegistered"));
+export const officialMigration = resource("officialMigration", () => officialMigrationStatus().catch(() => null));
+export const importOfficialConnectedAccounts = () => importOfficialAccounts();
 export const defaultBrowser = resource("defaultBrowser", () => isDefaultBrowser().catch(() => false));
 export const updater = resource("updater", (): Promise<UpdaterState> => updaterState().catch(() => ({ available: false })));
 export const syncFolder = resource("syncFolder", (folder: string | null) => folderInfo(folder).catch(() => null));

@@ -15,6 +15,7 @@ import { useResource } from "../../../state/settings/resources";
 import { openImport } from "../../../state/settings/settingsWindows";
 import { ExportBookmarksRow } from "./ExportBookmarksRow";
 import { SetupCodeRow } from "./SetupCodeRow";
+import { OfficialMigrationRow } from "./OfficialMigrationRow";
 import { UI_LOCALE } from "../../../lib/uiLocale";
 import { OtherAppsDestinationPopUp } from "./Links";
 import { useOtherAppsDestinationDescription } from "../../../state/linkRouting/hooks";
@@ -91,6 +92,7 @@ export function GeneralPane() {
         </Row>
         <ExportBookmarksRow />
         <SetupCodeRow />
+        <OfficialMigrationRow />
       </Group>
     </View>
   );

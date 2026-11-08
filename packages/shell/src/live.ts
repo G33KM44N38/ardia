@@ -40,6 +40,8 @@ export type CalendarNative = {
 };
 
 export type KeychainNative = {
+  officialMigrationStatus(): Promise<{ pending: boolean; imported: number } | null>;
+  importOfficialAccounts(): Promise<number>;
   get(account: string): Promise<string | null>;
   set(account: string, secret: string): Promise<boolean>;
   delete(account: string): Promise<boolean>;

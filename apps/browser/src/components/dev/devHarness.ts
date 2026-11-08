@@ -115,6 +115,9 @@ export function startDevHarness() {
     get syncSheets(): typeof import("../settings/panes/SyncSheets") {
       return require("../settings/panes/SyncSheets");
     },
+    get sync(): typeof import("../../state/sync/engine") & { native: typeof import("../../platform/sync").SyncNative } {
+      return { ...require("../../state/sync/engine"), native: require("../../platform/sync").SyncNative };
+    },
     get menus(): typeof import("../../state/sidebar/menus") &
       typeof import("../../state/site/reloadMenu") &
       typeof import("../profiles/profileMenu") &

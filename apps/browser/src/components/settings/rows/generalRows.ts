@@ -69,6 +69,11 @@ export const generalRows = {
           description: "Bookmarks, history, passwords, tabs and Arc spaces from Chrome, Arc, Safari, Firefox and more.",
           keywords: ["migrate", "switch", "transfer"],
         },
+        officialAccounts: {
+          title: "Connected accounts from Ardia",
+          description: "Import connected accounts after migrating from the official browser.",
+          keywords: ["migration", "keychain", "official", "connected accounts", "credentials"],
+        },
         exportBookmarks: {
           title: "Export bookmarks",
           description: "To an HTML file that Chrome, Safari, Firefox and every other browser can import.",

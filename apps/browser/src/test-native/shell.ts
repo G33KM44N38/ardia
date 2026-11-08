@@ -247,6 +247,8 @@ const calendar: Modules["ArdiaCalendar"] = {
 };
 
 const keychain: Modules["ArdiaKeychain"] = {
+  officialMigrationStatus: () => Promise.resolve(null),
+  importOfficialAccounts: () => Promise.resolve(0),
   get: () => Promise.resolve(null),
   set: () => Promise.resolve(true),
   delete: () => Promise.resolve(true),

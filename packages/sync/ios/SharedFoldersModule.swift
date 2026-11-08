@@ -7,12 +7,11 @@ public class SharedFoldersModule: Module {
   private var watcher: SharedFolderWatcher?
 
   public func definition() -> ModuleDefinition {
-    Name(Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true ? "ArdiaRoutingSharedFoldersUnavailable" : "ArdiaSharedFolders")
+    Name("ArdiaSharedFolders")
 
     Events("onChange")
 
     OnCreate { [weak self] in
-      guard Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool != true else { return }
       self?.watcher = SharedFolderWatcher { [weak self] paths in self?.sendEvent("onChange", ["paths": paths]) }
     }
 
@@ -47,6 +46,9 @@ public class SharedFoldersModule: Module {
   static var defaultParent: URL {
     if let testParent { return testParent }
     if let dataDirectory { return dataDirectory.appendingPathComponent("Ardia Shared", isDirectory: true) }
+    if Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true {
+      return SyncFolder.iCloudDrive.appendingPathComponent("Ardia Routing Shared", isDirectory: true)
+    }
     return SyncFolder.iCloudDrive.appendingPathComponent("Ardia Shared", isDirectory: true)
   }
 }

@@ -122,6 +122,32 @@ static NSString *AppDataDirectory() {
   return [support URLByAppendingPathComponent:NSBundle.mainBundle.bundleIdentifier ?: @"Ardia"].path;
 }
 
+static bool MigratedKeychainReady() {
+  if (![[NSBundle.mainBundle objectForInfoDictionaryKey:@"ACPersonalRoutingBuild"] boolValue]) return true;
+  NSString *marker = [AppDataDirectory() stringByAppendingPathComponent:@"official-migration.json"];
+  if (![NSFileManager.defaultManager fileExistsAtPath:marker]) return true;
+  NSDictionary *query = @{
+    (__bridge NSString *)kSecClass : (__bridge NSString *)kSecClassGenericPassword,
+    (__bridge NSString *)kSecAttrService : @"Ardia Safe Storage",
+    (__bridge NSString *)kSecAttrAccount : @"Ardia",
+    (__bridge NSString *)kSecReturnAttributes : @YES,
+    (__bridge NSString *)kSecUseAuthenticationUI : (__bridge NSString *)kSecUseAuthenticationUIFail,
+  };
+  CFTypeRef attributes = nullptr;
+  const OSStatus status = gScratchDataDir || !IsTeamSigned() ? errSecMissingEntitlement : SecItemCopyMatching((__bridge CFDictionaryRef)query, &attributes);
+  if (attributes) CFRelease(attributes);
+  if (status == errSecSuccess) return true;
+  fprintf(stderr, "[routing] migrated data kept closed: signing or existing Safe Storage key unavailable (%d)\n", (int)status);
+  if (!ArdiaLaunchConfig.shared.background) {
+    CFOptionFlags response = 0;
+    CFUserNotificationDisplayAlert(0, kCFUserNotificationStopAlertLevel, nullptr, nullptr, nullptr,
+      CFSTR("Ardia Routing kept your migrated data closed"),
+      CFSTR("This copy needs a developer signature and access to the existing Ardia Safe Storage key. Unlock your login keychain and try again. No key or browser data has been changed."),
+      CFSTR("Quit"), nullptr, nullptr, &response);
+  }
+  return false;
+}
+
 static NSDictionary *SavedLinkRouting(NSDictionary *settings) {
   return [settings[@"linkRouting"] isKindOfClass:NSDictionary.class] ? settings[@"linkRouting"] : nil;
 }
@@ -424,6 +450,7 @@ void StartEarlyWindow() {
             dirError.localizedDescription.UTF8String ?: "");
     return 1;
   }
+  if (!MigratedKeychainReady()) return 1;
   ardia_host::InstallTestCrashGuard(scratch && config.background ? scratch : nil);
   ardia_host::InstallActivationGuardsEarly();
   ardia_host::PrepareContentBlocker();

@@ -2,6 +2,7 @@ import AppKit
 import ArdiaCore
 import ExpoModulesCore
 import LocalAuthentication
+import CryptoKit
 
 public class SyncModule: Module {
   private let state = KeyState()
@@ -9,12 +10,9 @@ public class SyncModule: Module {
   private static let work = DispatchQueue(label: "ardia.sync", qos: .utility)
 
   public func definition() -> ModuleDefinition {
-    Name(Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true ? "ArdiaRoutingSyncUnavailable" : "ArdiaSync")
+    Name("ArdiaSync")
 
-    OnCreate {
-      guard Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool != true else { return }
-      Self.work.async { Self.removeTemporaryKits() }
-    }
+    OnCreate { Self.work.async { Self.removeTemporaryKits() } }
 
     AsyncFunction("folderInfo") { (path: String?) -> [String: Any] in
       let url = path.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultFolder
@@ -45,7 +43,10 @@ public class SyncModule: Module {
 
     Function("newDeviceId") { SyncKeys.newFileId() }
 
-    Function("deviceName") { Host.current().localizedName ?? "This Mac" }
+    Function("deviceName") {
+      let name = Host.current().localizedName ?? "This Mac"
+      return Self.personalRouting ? "\(name) · Ardia Routing" : name
+    }
 
     AsyncFunction("createPhrase") { (account: String) -> Bool in
       let entropy = RecoveryPhrase.generateEntropy()
@@ -307,7 +308,14 @@ public class SyncModule: Module {
       : RecoveryKit.pdf(words: words, created: Date(), device: device)
   }
 
-  private static let temporaryKitFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Ardia Recovery Kit", isDirectory: true)
+  private static let temporaryKitFolder: URL = {
+    let name = personalRouting ? "Ardia Routing Recovery Kit" : "Ardia Recovery Kit"
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: true)
+    guard let dataDirectory else { return base }
+    let digest = SHA256.hash(data: Data(dataDirectory.path.utf8))
+    let instance = digest.map { String(format: "%02x", $0) }.joined()
+    return base.appendingPathComponent(String(instance.prefix(16)), isDirectory: true)
+  }()
 
   private static func removeTemporaryKits() {
     try? FileManager.default.removeItem(at: temporaryKitFolder)
@@ -344,17 +352,20 @@ public class SyncModule: Module {
 
   private static let dataDirectory = LaunchConfig.shared.dataDirectory.map { URL(fileURLWithPath: $0, isDirectory: true) }
   private static let testFolder = LaunchConfig.shared.instance("syncFolder").map { URL(fileURLWithPath: $0, isDirectory: true) }
+  private static let personalRouting = Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true
 
   static var defaultFolder: URL {
     if let testFolder { return testFolder }
     if let dataDirectory { return dataDirectory.appendingPathComponent("Ardia Sync", isDirectory: true) }
+    if personalRouting { return SyncFolder.iCloudDrive.appendingPathComponent("Ardia Routing Sync", isDirectory: true) }
     let folder = SyncFolder.iCloudDrive.appendingPathComponent("Ardia Sync", isDirectory: true)
     let legacy = SyncFolder.iCloudDrive.appendingPathComponent(LegacyName.syncFolderName, isDirectory: true)
     if !FileManager.default.fileExists(atPath: folder.path), SyncFolder.hasSyncData(legacy) { return legacy }
     return folder
   }
 
-  static let keyStore: SyncKeyStore = dataDirectory.map { FileKeyStore(directory: $0) } ?? KeychainKeyStore()
+  static let keyStore: SyncKeyStore = dataDirectory.map { FileKeyStore(directory: $0) }
+    ?? KeychainKeyStore(service: personalRouting ? "Ardia Routing Sync Key" : "Ardia Sync Key")
 
   static let loginsTimeout = LaunchConfig.shared.testValue("loginsTimeout").flatMap(TimeInterval.init) ?? 30
 }

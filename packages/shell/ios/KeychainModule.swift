@@ -6,9 +6,41 @@ import Security
 public class KeychainModule: Module {
   private static let service = Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true
     ? "Ardia Routing Connected Accounts" : "Ardia Connected Accounts"
+  private static let migrationQueue = DispatchQueue(label: "ardia.routing.account-migration", qos: .userInitiated)
 
   public func definition() -> ModuleDefinition {
     Name("ArdiaKeychain")
+
+    AsyncFunction("officialMigrationStatus") { () -> [String: Any]? in
+      guard let marker = Self.migrationMarker() else { return nil }
+      return ["pending": marker["connectedAccounts"] as? String != "complete", "imported": marker["importedAccounts"] as? Int ?? 0]
+    }.runOnQueue(Self.migrationQueue)
+
+    AsyncFunction("importOfficialAccounts") { () throws -> Int in
+      guard var marker = Self.migrationMarker(), marker["connectedAccounts"] as? String == "pending" else { return 0 }
+      let request: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "Ardia Connected Accounts", kSecReturnAttributes as String: true,
+        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+      var found: CFTypeRef?
+      let status = SecItemCopyMatching(request as CFDictionary, &found)
+      guard status == errSecSuccess || status == errSecItemNotFound else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+      let entries = found as? [[String: Any]] ?? []
+      var count = 0
+      for entry in entries {
+        guard let account = entry[kSecAttrAccount as String] as? String, let secret = entry[kSecValueData as String] as? Data else { continue }
+        var item = Self.query(account)
+        item[kSecValueData as String] = secret
+        item[kSecAttrLabel as String] = "Ardia Routing: \(account)"
+        let saved = SecItemAdd(item as CFDictionary, nil)
+        guard saved == errSecSuccess || saved == errSecDuplicateItem else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(saved)) }
+        count += 1
+      }
+      marker["connectedAccounts"] = "complete"
+      marker["importedAccounts"] = count
+      let data = try JSONSerialization.data(withJSONObject: marker)
+      try data.write(to: DocumentStore.url("official-migration.json"), options: .atomic)
+      return count
+    }.runOnQueue(Self.migrationQueue)
 
     AsyncFunction("get") { (account: String) -> String? in
       if let store = IsolatedSecrets.shared { return store.get(account) }
@@ -51,6 +83,15 @@ public class KeychainModule: Module {
 
   private static func query(_ account: String) -> [String: Any] {
     [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+  }
+
+  private static func migrationMarker() -> [String: Any]? {
+    guard Bundle.main.object(forInfoDictionaryKey: "ACPersonalRoutingBuild") as? Bool == true,
+      !LaunchConfig.shared.isolated,
+      let text = DocumentStore.read("official-migration.json"), let data = text.data(using: .utf8),
+      let marker = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+      marker["source"] as? String == "com.ardia.browser" else { return nil }
+    return marker
   }
 }
 
