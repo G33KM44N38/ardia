@@ -7,10 +7,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { bookmarks, doctor, migrationUI, workspace } from "./journeys.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const { launch, session, sleep, listenerPids } = await import(join(repo, "scripts/lib/instance.mjs"));
-assert.equal(process.argv[2] ?? "prove", "prove", "Usage: verify.mjs prove [built-app]");
+const mode = process.argv[2] ?? "prove";
+assert.ok(["prove", "suite"].includes(mode), "Usage: verify.mjs prove|suite [built-app]");
 const app = resolve(process.argv[3] ?? join(repo, "apps/browser/build-routing/Build/Products/Release/Ardia.app"));
 const evidence = join(repo, "output/verification/ardia", `${Date.now()}-${randomUUID().slice(0, 8)}`);
 mkdirSync(evidence, { recursive: true });
@@ -27,9 +29,11 @@ const server = createServer((req, res) => {
 });
 let instance;
 let failure;
+const ctx = { get instance() { return instance; }, set instance(value) { instance = value; }, app, data, evidence, save, launch, sleep, listenerPids, actions: [] };
 try {
   await new Promise((r, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", r); });
   const base = `http://127.0.0.1:${server.address().port}`;
+  ctx.base = base;
   const fixture = session({
     profiles: ["Personal", { id: "verify-work", name: "Work" }],
     windows: [{ id: "verify-window" }],
@@ -46,7 +50,9 @@ try {
   assert.ok(state.profiles.includes("verify-work"));
   assert.equal(state.routes.routes[0].pattern, "route-fixture");
   execFileSync("codesign", ["--verify", "--deep", "--strict", app], { timeout: 30000 });
-  save("doctor.json", { owned: true, isolated: true, signatureValid: true, state, nativeWindows: await instance.eval('return ac.engine.call("windows.list",{})') });
+  const nativeWindows = await instance.eval('return ac.engine.call("windows.list",{})');
+  assert.ok(Array.isArray(nativeWindows) && nativeWindows.some(w => w.hasRoot && w.ready));
+  save("doctor.json", { owned: true, isolated: true, signatureValid: true, state, nativeWindows });
   const source = await instance.page(`${base}/source`);
   try {
     const end = Date.now() + 15000;
@@ -87,8 +93,21 @@ try {
     assert.ok(persisted.tabs.some(t => t.url === `${base}/route-fixture` && t.profileId === "verify-work"));
     save("result.json", { passed: true, result, requests, persisted: true, scope: "Internal page click routes to Work while preserving source tab" });
   } finally { source.close(); }
+  if (mode === "suite") {
+    await workspace(ctx);
+    await bookmarks(ctx);
+    await migrationUI(ctx);
+    save("suite-actions.json", ctx.actions);
+  }
 } catch (error) {
   failure = error;
+  save("suite-actions.json", ctx.actions);
+  if (instance?.alive) {
+    try { save("failed-ui-state.json", await instance.eval('const s=ac.store.getState();return {dialog:ac.menus.useBookmarkDialog.getState().open,bookmarks:s.bookmarks,windows:s.windows}')); } catch {}
+  }
+  if (instance?.alive) {
+    try { await doctor(ctx, "after-failed-drive"); } catch (healthError) { save("doctor-failure.json", { error: String(healthError) }); }
+  }
   save("failure.json", { error: error.stack });
 } finally {
   if (instance) {
