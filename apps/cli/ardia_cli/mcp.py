@@ -9,6 +9,7 @@ from pathlib import Path
 from ardia_cli.control import Unreachable, check_socket, peer_uid
 
 LIMIT = 1048576
+RESPONSE_LIMIT = 4 * 1024 * 1024
 TOOLS = {
     "request_access": ("Request approval in Ardia Fork Settings → Advanced → Agents. Names are self-reported.", {"name": {"type": "string", "maxLength": 60}}, ["name"], "connect"),
     "list_profiles": ("List only approved profiles.", {}, [], "list_profiles"),
@@ -66,8 +67,8 @@ class Browser:
             raise ValueError("Tool request too large")
         try:
             self.sock.sendall(wire)
-            line = self.stream.readline(LIMIT + 1)
-            if not line or len(line) > LIMIT or not line.endswith(b"\n"):
+            line = self.stream.readline(RESPONSE_LIMIT + 1)
+            if not line or len(line) > RESPONSE_LIMIT or not line.endswith(b"\n"):
                 raise ValueError("Agent connection closed or response too large; reconnect and request approval again")
             reply = json.loads(line)
             if reply.get("id") != self.sequence:

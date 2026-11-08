@@ -3,6 +3,7 @@ import Darwin
 import Foundation
 
 final class ControlSocket {
+  private static let bindLock = NSLock()
   static let shared = ControlSocket()
   static let agents = ControlSocket(socketName: "ArdiaAgents.sock")
   private let socketName: String
@@ -165,11 +166,13 @@ final class ControlSocket {
       raw[bytes.count] = 0
     }
     address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+    Self.bindLock.lock()
     let previousMask = umask(0o177)
     let bindResult = withUnsafePointer(to: &address) {
       $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
     }
     umask(previousMask)
+    Self.bindLock.unlock()
     var made = stat()
     guard bindResult == 0, listen(fd, Int32(Self.maxConnections)) == 0, lstat(path, &made) == 0 else {
       let text = Self.errnoText()

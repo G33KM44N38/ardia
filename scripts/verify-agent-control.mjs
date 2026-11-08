@@ -6,11 +6,12 @@ import { createInterface } from "node:readline";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { appEnv, attach, binaryOf, binaryPids, launch, mergeLaunchEnv, processInfo, session, sleep } from "./lib/instance.mjs";
+import { appEnv, attach, binaryOf, binaryPids, launch, launchVariables, mergeLaunchEnv, processInfo, session, sleep } from "./lib/instance.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const app = resolve(process.argv[2] ?? join(repo, "apps/browser/build-routing/Build/Products/Release/Ardia.app"));
 assert.ok(!app.startsWith("/Applications/"));
+execFileSync("codesign", ["--verify", "--deep", "--strict", app]);
 const evidence = join(repo, "output/verification/mcp", String(Date.now()));
 mkdirSync(evidence, { recursive: true });
 const data = mkdtempSync("/tmp/ardia-mcp-proof-");
@@ -30,8 +31,14 @@ const server = createServer((req, res) => {
   req.on("end", () => {
     requests.push({ method: req.method, path: req.url, body });
     if (req.url === "/saved") { save("saved.json", { body }); res.end("saved"); return; }
+    if (req.url === "/large" || req.url === "/huge") {
+      const huge = req.url === "/huge";
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.end(`<html><body style="margin:0"><p id="ready">Drawing</p><canvas id="noise" width="${huge ? 2560 : 640}" height="${huge ? 1600 : 480}" style="width:${huge ? 1280 : 640}px;height:${huge ? 800 : 480}px;image-rendering:${huge ? "auto" : "pixelated"}"></canvas><script>const c=document.getElementById('noise'),ctx=c.getContext('2d'),im=ctx.createImageData(c.width,c.height);let seed=123456789;for(let i=0;i<im.data.length;i+=4){seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;im.data[i]=seed&255;im.data[i+1]=(seed>>>8)&255;im.data[i+2]=(seed>>>16)&255;im.data[i+3]=255}ctx.putImageData(im,0,0);document.getElementById('ready').textContent='Noise ready';</script></body></html>`);
+      return;
+    }
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.end('<html><body><h1>Agent control fixture</h1><input aria-label="Fixture name" id="name"><button id="save" onclick="document.getElementById(\'status\').textContent=\'Saved \'+document.getElementById(\'name\').value;fetch(\'/saved\',{method:\'POST\',body:document.getElementById(\'name\').value})">Save fixture</button><p id="status">Waiting</p><a href="chrome://settings">Forbidden browser page</a></body></html>');
+    res.end('<html><body><h1>Agent control fixture</h1><input aria-label="Fixture name" id="name"><button id="save" onclick="document.getElementById(\'status\').textContent=\'Saved \'+document.getElementById(\'name\').value;fetch(\'/saved\',{method:\'POST\',body:document.getElementById(\'name\').value})">Save fixture</button><p id="status">Waiting</p><p id="security"></p><script>document.getElementById("security").textContent="Secure context: "+window.isSecureContext</script><a href="chrome://settings">Forbidden browser page</a></body></html>');
   });
 });
 const eventually = async test => {
@@ -72,7 +79,7 @@ function client() {
 const value = reply => { assert.ok(!reply.isError, reply.content?.[0]?.text); return JSON.parse(reply.content[0].text); };
 try {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${server.address().port}`;
+  const base = `http://http-fixture.test:${server.address().port}`;
   writeFileSync(join(data, "session.json"), JSON.stringify(session({ profiles: ["Personal", { id: "secret", name: "Secret" }],
     tabs: [{ id: "source", url: base + "/source" }, { id: "hidden", profileId: "secret", url: base + "/secret" }],
     settings: { cliControl: false, showAdvancedSettings: true, loadProfilesWhenOpened: false },
@@ -80,7 +87,7 @@ try {
   writeFileSync(join(data, "onboarding.json"), JSON.stringify({ version: 1, completedAt: 1 }));
   writeFileSync(join(data, "perf-probe"), "");
   const binary = binaryOf(app), before = binaryPids(binary), log = join(data, "app.log");
-  const env = appEnv(app, mergeLaunchEnv({ ARDIA_BACKGROUND: "1", ARDIA_DATA_DIR: data, ARDIA_REMOTE_DEBUGGING_PORT: "" }));
+  const env = appEnv(app, mergeLaunchEnv({ ARDIA_BACKGROUND: "1", ARDIA_DATA_DIR: data, ARDIA_REMOTE_DEBUGGING_PORT: "" }, launchVariables({ instance: { chromiumSwitches: "--host-resolver-rules=MAP http-fixture.test 127.0.0.1 --no-proxy-server" } })));
   execFileSync("open", ["-g", "-n", ...Object.entries(env).filter(([, v]) => v !== null && v !== undefined).flatMap(([k, v]) => ["--env", `${k}=${v}`]), "--stdout", log, "--stderr", log, app]);
   let pid;
   await eventually(() => { pid = [...binaryPids(binary)].find(p => !before.has(p)); return !!pid; });
@@ -114,6 +121,7 @@ try {
     if (response.isError) return false;
     snapshot = value(response); return snapshot.text.includes("Agent control fixture");
   });
+  assert.ok(snapshot.text.includes("Secure context: false"));
   const name = snapshot.elements.find(e => e.name === "Fixture name").ref;
   const button = snapshot.elements.find(e => e.name === "Save fixture").ref;
   const forbidden = snapshot.elements.find(e => e.name === "Forbidden browser page").ref;
@@ -132,6 +140,26 @@ try {
   const shot = await a.tool("screenshot", { tab: "source" });
   assert.ok(!shot.isError, shot.content?.[0]?.text);
   writeFileSync(join(evidence, "page.png"), Buffer.from(shot.content[0].data, "base64"));
+  value(await a.tool("navigate", { tab: "source", destination: base + "/large" }));
+  await eventually(async () => {
+    const reply = await a.tool("snapshot", { tab: "source" });
+    return !reply.isError && value(reply).text.includes("Noise ready");
+  });
+  const large = await a.tool("screenshot", { tab: "source" });
+  assert.ok(!large.isError, large.content?.[0]?.text);
+  assert.ok(large.content[0].data.length > 1048576, "Fixture must exercise a screenshot response larger than the former 1 MiB limit");
+  writeFileSync(join(evidence, "large-page.png"), Buffer.from(large.content[0].data, "base64"));
+  assert.deepEqual(value(await a.tool("list_profiles")).map(p => p.id), ["default"]);
+  value(await a.tool("navigate", { tab: "source", destination: base + "/huge" }));
+  await eventually(async () => {
+    const reply = await a.tool("snapshot", { tab: "source" });
+    return !reply.isError && value(reply).text.includes("Noise ready");
+  });
+  const oversized = await a.tool("screenshot", { tab: "source" });
+  assert.equal(oversized.isError, true);
+  assert.match(oversized.content[0].text, /Screenshot too large/);
+  assert.deepEqual(value(await a.tool("list_profiles")).map(p => p.id), ["default"]);
+  save("screenshot-limits.json", { largeBase64Bytes: large.content[0].data.length, oversized: oversized.content[0].text, approvalSurvivedBoth: true });
   await instance.eval('ac.openSettings("advanced");return true');
   await sleep(1000);
   await instance.eval('ac.settingsSearch.revealSetting({id:"advanced.agents",pane:"advanced",section:"Agents"});return true');
@@ -156,7 +184,7 @@ try {
   await external.eval('return ac.agentControl.setAgentControl(true)');
   assert.equal(await external.eval('return ac.agentControl.useAgentControl.getState().enabled'), false);
   assert.match(await external.eval('return ac.agentControl.useAgentControl.getState().reason'), /DevTools/);
-  save("result.json", { passed: true, scope: "Real MCP stdio → dedicated native socket → browser broker → native page operations; fixture approvals use the internal approval function, not UI clicks", requests, checks: ["preapproval refusal", "two-profile isolation", "read-only refusal", "fill/click and HTTP side effect", "stale snapshot", "privileged link", "scripts denied", "native forged target denied", "screenshot", "revocation", "reconnect requires approval", "global CLI stops scoped access", "external CDP refusal"] });
+  save("result.json", { passed: true, scope: "Real MCP stdio → dedicated native socket → browser broker → native page operations; fixture approvals use the internal approval function, not UI clicks", requests, checks: ["HTTP insecure-origin snapshot", "large screenshot preserves approval", "oversized screenshot refuses without disconnect", "preapproval refusal", "two-profile isolation", "read-only refusal", "fill/click and HTTP side effect", "stale snapshot", "privileged link", "scripts denied", "native forged target denied", "screenshot", "revocation", "reconnect requires approval", "global CLI stops scoped access", "external CDP refusal"] });
 } catch (error) {
   failure = error;
   save("failure.json", { error: error.stack });

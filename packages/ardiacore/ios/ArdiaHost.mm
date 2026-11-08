@@ -293,18 +293,22 @@ static void (^gQuitCancelledHandler)(void);
     }
     if ([operation isEqualToString:@"screenshot"]) {
       [tab devToolsCall:@"Page.captureScreenshot" params:@{@"format": @"png"} timeout:2.0 completion:^(NSDictionary *shot, NSString *error) {
-        completion(allowed() && sameTarget() && [shot[@"data"] isKindOfClass:NSString.class] ? @{@"data": shot[@"data"], @"mimeType": @"image/png"} : @{@"error": @"Screenshot unavailable or access revoked"});
+        if (!allowed() || !sameTarget() || ![shot[@"data"] isKindOfClass:NSString.class]) { completion(@{@"error": @"Screenshot unavailable or access revoked"}); return; }
+        if ([shot[@"data"] length] > 3 * 1024 * 1024) { completion(@{@"error": @"Screenshot too large; reduce the window size and retry"}); return; }
+        completion(@{@"data": shot[@"data"], @"mimeType": @"image/png"});
       }];
       return;
     }
-    NSData *json = [NSJSONSerialization dataWithJSONObject:request options:0 error:nil];
+    NSMutableDictionary *payload = [request mutableCopy];
+    payload[@"snapshotId"] = NSUUID.UUID.UUIDString;
+    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
     if (!json || json.length > 65536) { completion(@{@"error": @"Agent request too large"}); return; }
     NSString *source = [NSString stringWithUTF8String:R"JS((p=>{
       if(location.href!==p.url || !['http:','https:'].includes(location.protocol)) return {error:'Document changed'};
       const key='__ardiaAgent_'+p.connection;
       if(p.operation==='snapshot') {
         const nodes=Array.from(document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[contenteditable="true"]')).filter(e=>e.getClientRects().length).slice(0,500);
-        const id=crypto.randomUUID(); globalThis[key]={id,nodes,document};
+        const id=p.snapshotId; globalThis[key]={id,nodes,document};
         return {snapshot:id,title:document.title,url:location.href,text:(document.body?.innerText||'').slice(0,40000),elements:nodes.map((e,i)=>({ref:String(i),tag:e.tagName.toLowerCase(),role:e.getAttribute('role'),name:(e.getAttribute('aria-label')||e.innerText||e.getAttribute('placeholder')||'').slice(0,300),type:e.getAttribute('type')}))};
       }
       const saved=globalThis[key];
