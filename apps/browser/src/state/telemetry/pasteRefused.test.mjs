@@ -72,7 +72,7 @@ test("only names are kept: anything that is not a recognised type identifier bec
     gateOpen: true,
     layout: "/Users/someone/layout",
     responder: "NSTextView in /Users/someone",
-    types: ["public.html", "https://example.com/a?token=secret", "dyn.ah62d4rv4gu8y6y4grf0gn5xbrzw1gydcr7u1e3cytf2gn", "dyn.ah62d4rv4gu8y6y4", "public.data /Users/alice/private", "/Users/alice/private", "hello, world", 7, null, "public.html", "text/html", "Apple PNG pasteboard type", "CorePasteboardFlavorType 0x54455854"],
+    types: ["public.html", "https://example.com/a?token=secret", `dyn.${"a".repeat(40)}`, "dyn.abc", "public.data /Users/alice/private", "/Users/alice/private", "hello, world", 7, null, "public.html", "text/html", "Apple PNG pasteboard type", "CorePasteboardFlavorType 0x54455854"],
   });
   const event = queued().at(-1);
   assert.equal(event.properties.type_ids, "public.html,other,dyn,text/html,Apple PNG pasteboard type,CorePasteboardFlavorType 0x54455854");
