@@ -82,12 +82,22 @@ export function routeTypedUrl(url: string, from: { windowId: string; tabId?: str
   const s = store();
   const w = s.windows[from.windowId];
   if (!w || w.kind === "private") return false;
-  const tab = from.tabId ? s.tabs[from.tabId] : undefined;
-  const placement = placeLinkFromProfile(s, url, tab?.profileId ?? w.profileId, { windowId: w.id, tabId: from.tabId });
-  if (!placement) return false;
+  const profileId = (from.tabId ? s.tabs[from.tabId]?.profileId : undefined) ?? w.profileId;
+  const source = { windowId: w.id, tabId: from.tabId };
+  if (!placeLinkFromProfile(s, url, profileId, source)) return false;
   s.closePanel(from.windowId);
   const how = from.disposition === "newWindow" ? "window" : "foreground";
-  openAtPlacement(placement, { url, how, from: isSmall(s, w.id) ? undefined : { windowId: w.id, tabId: from.tabId } });
+  const context = { tabId: from.tabId ?? null, windowId: w.id, profileId, via: "typed" as const };
+  settleOpening(gateOpening(url, context, null), null, (verdict) => {
+    if (verdict && "cancel" in verdict) return;
+    const target = verdict?.url ?? url;
+    const now = store();
+    const open = { url: target, how, from: isSmall(now, w.id) ? undefined : source, gated: true } as const;
+    const placement = placeLinkFromProfile(now, target, profileId, source);
+    if (placement) return void openAtPlacement(placement, open);
+    if (from.tabId && from.disposition === "current") return now.navigate(from.tabId, target, { userInitiated: true, gated: true });
+    openAtPlacement({ kind: "profile", profileId }, open);
+  });
   return true;
 }
 
