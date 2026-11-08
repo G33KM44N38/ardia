@@ -719,7 +719,7 @@ test("a click on a link another profile's route matches is routed instead of nav
   env.gesture([a], { meta: true });
   env.gesture([a], { shift: true });
   env.gesture([a], { meta: true, shift: true });
-  assert.deepEqual(routes(env).slice(1).map((r) => r.how), ["background", "window", "foreground"]);
+  assert.deepEqual(routes(env).slice(1).map((r) => [r.how, r.opens]), [["background", "tab"], ["window", "page"], ["foreground", "tab"]]);
   const before = routes(env).length;
   assert.ok(!env.gesture([a], { detail: 0 }).defaultPrevented);
   assert.ok(!env.gesture([a], { ctrl: true }).defaultPrevented);

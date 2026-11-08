@@ -198,3 +198,22 @@ test("routes the page bridge refuses are sent again, later each time, until it t
   assert.equal(stub.pageLinkRoutes.failNext, 0);
   assert.deepEqual(stub.pageLinkRoutes.sent.at(-1), [{ match: "contains", pattern: "github.com", profile: "work" }]);
 });
+
+test("a routed click already at its destination opens the way its keys say: ⌘⇧ a foreground tab, a plain click in place", async () => {
+  const { openFromPage } = await import("../state/tabs/openFromPage.ts");
+  const { activeTabId } = await import("../state/browser/model.ts");
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.example/" });
+  const source = activeTabId(S(), w);
+  const profileId = S().tabs[source].profileId;
+  const group = S().groupTabs([source]);
+  S().updateSettings({ linkRouting: { routes: [route("g", "contains", "mail.example", { kind: "group", profileId, groupKey: group })], defaultDestination: RECENT } });
+  const page = { windowId: w, tabId: source, profileId };
+  openFromPage({ url: "https://mail.example/tab", disposition: "foreground", opens: "tab", userGesture: true, routed: true }, page);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(S().tabs[source].page.nav?.url ?? S().tabs[source].url, "https://a.example/");
+  assert.ok(Object.values(S().tabs).some((t) => t.url === "https://mail.example/tab" && t.id !== source));
+  openFromPage({ url: "https://mail.example/here", disposition: "foreground", opens: "page", userGesture: true, routed: true }, page);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(S().tabs[source].page.nav?.url, "https://mail.example/here");
+});

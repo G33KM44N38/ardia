@@ -240,8 +240,9 @@ static NSString *LinkKeyAction(NSString *key) {
   NSString *claimed = Text(dict, @"how", 16);
   if (![@[ @"http", @"https" ] containsObject:scheme] || !_visible || !self.window) return;
   if (![@[ @"foreground", @"background", @"window" ] containsObject:claimed ?: @""]) claimed = @"foreground";
-  NSString *opens = [Text(dict, @"opens", 8) isEqualToString:@"tab"] ? @"tab" : @"page";
   const BOOL test = PeekTestHooks() && !PeekStrict();
+  const BOOL commandClick = !test && (gPeekUpKeys & NSEventModifierFlagCommand);
+  NSString *opens = commandClick || [Text(dict, @"opens", 8) isEqualToString:@"tab"] ? @"tab" : @"page";
   const BOOL fresh = gPeekUpAt >= 0 && CACurrentMediaTime() - gPeekUpAt <= kPeekGestureLifetime && !gPeekPressedSinceUp;
   const BOOL peekKeys = gPeekUpKeys && (gPeekUpKeys == LinkKeyFlags(gPeekModifier) || gPeekUpKeys == LinkKeyFlags(SplitLinkModifier()));
   NSString *how = test ? claimed : RouteDisposition(gPeekUpKeys);

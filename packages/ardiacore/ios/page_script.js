@@ -861,7 +861,7 @@
       const opens = routedOpens(hit.link);
       if (!opens || !routed(hit.url)) return;
       apply(preventDefault, e, []);
-      send("route", { url: hit.url, how, opens, origin: pageOrigin });
+      send("route", { url: hit.url, how, opens: metaKey(e) ? "tab" : opens, origin: pageOrigin });
     };
     addEventListener(
       "click",

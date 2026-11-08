@@ -60,13 +60,16 @@ function routeOf(value: unknown): LinkRoute | null {
   return destination && { id: value.id, match: value.match, pattern: value.pattern, destination };
 }
 
-export const isLinkRouting = (value: unknown): value is LinkRouting =>
-  isRecord(value) &&
-  Array.isArray(value.routes) &&
-  value.routes.length <= MAX_LINK_ROUTES &&
-  value.routes.every((route) => routeOf(route) !== null) &&
-  new Set(value.routes.map((route) => (route as LinkRoute).id)).size === value.routes.length &&
-  destinationOf(value.defaultDestination) !== null;
+export function isLinkRouting(value: unknown): value is LinkRouting {
+  if (!isRecord(value) || !Array.isArray(value.routes) || value.routes.length > MAX_LINK_ROUTES || destinationOf(value.defaultDestination) === null) return false;
+  const ids = new Set<string>();
+  for (const raw of value.routes) {
+    const route = routeOf(raw);
+    if (!route || ids.has(route.id)) return false;
+    ids.add(route.id);
+  }
+  return true;
+}
 
 const NONEMPTY: JsonSchema = { type: "string", pattern: "[\\s\\S]" };
 
