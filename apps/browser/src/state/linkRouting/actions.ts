@@ -3,7 +3,8 @@ import { groupRouteKey, type LinkPlacement } from "../../lib/linkRouting";
 import { focus, openWindow } from "../browser/actions";
 import { useBrowser, type BrowserState } from "../browser/store";
 import type { Disposition } from "../omnibox/openFromBar";
-import type { AdoptId } from "../browser/types";
+import type { AdoptId, NewTabTarget } from "../browser/types";
+import { openAtNewTabTarget } from "../omnibox/newTabBar";
 import { isRegularWindow, isSmall, mainWindowFor } from "../windows/small";
 import { adoptOf, navigationOf } from "../tabs/pageSession";
 import { gateOpening, settleOpening, type OpeningContext, type OpeningVia } from "../tabs/openingGate";
@@ -78,7 +79,7 @@ function joinGroup(tabId: string, profileId: string, groupKey: string) {
   if (group.collapsed) store().updateGroup(group.id, { collapsed: false });
 }
 
-export function routeTypedUrl(url: string, from: { windowId: string; tabId?: string; disposition: Disposition }): boolean {
+export function routeTypedUrl(url: string, from: { windowId: string; tabId?: string; disposition: Disposition; newTab?: NewTabTarget }): boolean {
   const s = store();
   const w = s.windows[from.windowId];
   if (!w || w.kind === "private") return false;
@@ -97,6 +98,7 @@ export function routeTypedUrl(url: string, from: { windowId: string; tabId?: str
     const placement = placeLinkFromProfile(now, target, profileId, source);
     if (placement) return void openAtPlacement(placement, open);
     if (from.tabId && from.disposition === "current") return now.navigate(from.tabId, target, { userInitiated: true, gated: true });
+    if (from.newTab && from.disposition !== "newWindow") return openAtNewTabTarget(w.id, from.newTab, target, true);
     openAtPlacement({ kind: "profile", profileId }, open);
   });
   return true;

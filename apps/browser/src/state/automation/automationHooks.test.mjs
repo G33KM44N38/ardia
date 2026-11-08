@@ -529,6 +529,20 @@ test("a typed URL a hook rewrites away from its route opens where it was typed, 
   assert.equal(Object.values(S().tabs).some((x) => x.profileId === work), false);
 });
 
+test("a new-tab bar URL a hook rewrites away from its route opens where the bar was aimed: inside its tab group", async () => {
+  const { routeTypedUrl } = await import("../linkRouting/actions.ts");
+  fresh([{ name: "old-reddit", on: "tab.opening", rewrite: [{ match: "https://www.reddit.com/*", to: "https://old.reddit.com{path}" }] }]);
+  await controlOn();
+  approveRule(approvalFor(useHookRules.getState().hooks[0]).key);
+  const work = S().createProfile({ name: "Work" });
+  S().updateSettings({ linkRouting: { routes: [{ id: "r", match: "contains", pattern: "www.reddit.com", destination: { kind: "profile", profileId: work } }], defaultDestination: { kind: "recent" } } });
+  const w = S().createWindow({ url: "https://a.example/" });
+  const group = S().groupTabs([model.activeTabId(S(), w)]);
+  assert.equal(routeTypedUrl("https://www.reddit.com/r/y", { windowId: w, disposition: "current", newTab: { kind: "group", groupId: group } }), true);
+  const opened = Object.values(S().tabs).find((x) => (x.page?.nav?.url ?? x.url) === "https://old.reddit.com/r/y");
+  assert.ok(opened && S().groups[group].tabIds.includes(opened.id));
+});
+
 test("a rewritten navigation goes out as not user-initiated; an unchanged one keeps its value", async () => {
   fresh([{ name: "strip", on: "tab.opening", match: "https://track.example/*", rewrite: [{ match: "https://track.example/*", to: "{origin}{path}" }] }]);
   const w = S().createWindow({ url: "https://a.example/" });

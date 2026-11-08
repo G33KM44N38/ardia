@@ -147,7 +147,7 @@ export function Omnibox({
   const go = (url: string, disposition: Disposition = "current", search = false) => {
     bangEnter.cancel();
     if (!url) return;
-    if (!search && routeTypedUrl(url, { windowId, tabId: opensTab ? undefined : tabId, disposition })) return dismiss();
+    if (!search && routeTypedUrl(url, { windowId, tabId: opensTab ? undefined : tabId, disposition, newTab: opensTab })) return dismiss();
     if (opensTab && disposition !== "newWindow") return openFromNewTabBar(windowId, opensTab, url);
     if (disposition === "current") journeyNavigate(tabId);
     openFromBar(url, tabId, disposition);
