@@ -6,7 +6,7 @@ import type { Disposition } from "../omnibox/openFromBar";
 import type { AdoptId } from "../browser/types";
 import { isRegularWindow, isSmall, mainWindowFor } from "../windows/small";
 import { adoptOf, navigationOf } from "../tabs/pageSession";
-import { gateOpening, settleOpening, type OpeningVia } from "../tabs/openingGate";
+import { gateOpening, settleOpening, type OpeningContext, type OpeningVia } from "../tabs/openingGate";
 import { pageLinkRoutes, placeLinkFromProfile } from "./placement";
 
 const store = () => useBrowser.getState();
@@ -23,7 +23,7 @@ export type RoutedOpen = {
 
 export function openAtPlacement(placement: LinkPlacement, open: RoutedOpen): string | undefined {
   if (!open.gated) {
-    const context = { tabId: open.from?.tabId ?? null, windowId: open.from?.windowId ?? null, profileId: placement.profileId, via: open.via ?? "typed" };
+    const context: OpeningContext = { tabId: open.from?.tabId ?? null, windowId: open.from?.windowId ?? null, profileId: placement.profileId, via: open.via ?? "typed" };
     return settleOpening(gateOpening(open.url, context, null), null, (verdict) =>
       verdict && "cancel" in verdict ? undefined : openAtPlacement(placement, { ...open, url: verdict?.url ?? open.url, gated: true }),
     );
@@ -87,12 +87,13 @@ export function routeTypedUrl(url: string, from: { windowId: string; tabId?: str
   if (!placeLinkFromProfile(s, url, profileId, source)) return false;
   s.closePanel(from.windowId);
   const how = from.disposition === "newWindow" ? "window" : "foreground";
-  const context = { tabId: from.tabId ?? null, windowId: w.id, profileId, via: "typed" as const };
-  settleOpening(gateOpening(url, context, null), null, (verdict) => {
+  const context: OpeningContext = { tabId: from.tabId ?? null, windowId: w.id, profileId, via: "typed" };
+  const key = from.tabId && from.disposition === "current" ? `tab:${from.tabId}` : null;
+  settleOpening(gateOpening(url, context, key), key, (verdict) => {
     if (verdict && "cancel" in verdict) return;
     const target = verdict?.url ?? url;
     const now = store();
-    const open = { url: target, how, from: isSmall(now, w.id) ? undefined : source, gated: true } as const;
+    const open: RoutedOpen = { url: target, how, from: isSmall(now, w.id) ? undefined : source, gated: true };
     const placement = placeLinkFromProfile(now, target, profileId, source);
     if (placement) return void openAtPlacement(placement, open);
     if (from.tabId && from.disposition === "current") return now.navigate(from.tabId, target, { userInitiated: true, gated: true });

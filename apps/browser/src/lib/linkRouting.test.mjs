@@ -217,3 +217,26 @@ test("a routed click already at its destination opens the way its keys say: âŒ˜â
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(S().tabs[source].page.nav?.url, "https://mail.example/here");
 });
+
+test("a typed URL's slow tab.opening answer loses to a newer navigation of the same tab", async () => {
+  const { setOpeningGate } = await import("../state/tabs/openingGate.ts");
+  const { routeTypedUrl } = await import("../state/linkRouting/actions.ts");
+  const { activeTabId } = await import("../state/browser/model.ts");
+  S().hydrate({});
+  const work = S().createProfile({ name: "Work" });
+  S().updateSettings({ linkRouting: { routes: [route("r", "contains", "slow.example", { kind: "profile", profileId: work })], defaultDestination: RECENT } });
+  const w = S().createWindow({ url: "https://a.example/" });
+  const t = activeTabId(S(), w);
+  let answer;
+  setOpeningGate((url) => (url.startsWith("https://slow.example/") ? new Promise((resolve) => (answer = resolve)) : null));
+  try {
+    assert.equal(routeTypedUrl("https://slow.example/x", { windowId: w, tabId: t, disposition: "current" }), true);
+    S().navigate(t, "https://newer.example/", { userInitiated: true });
+    answer({ url: "https://unrouted.example/" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(S().tabs[t].page.nav?.url, "https://newer.example/");
+    assert.equal(Object.values(S().tabs).some((x) => x.url === "https://unrouted.example/"), false);
+  } finally {
+    setOpeningGate(null);
+  }
+});
