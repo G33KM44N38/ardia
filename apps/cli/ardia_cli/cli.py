@@ -200,6 +200,8 @@ def build_parser():
 
     config_cli.add_parsers(commands, argparse.RawDescriptionHelpFormatter)
 
+    commands.add_parser("mcp", help="connect AI agents to Ardia Fork over MCP; approvals in Settings → Advanced → Agents")
+
     from ardia_cli import automation_cli
 
     automation_cli.add_parsers(commands, argparse.RawDescriptionHelpFormatter)
@@ -247,6 +249,12 @@ def run(argv: list[str]) -> int:
         sys.stderr.write(f"ardia: {error}\n")
         return 2
     command = argv[index] if index < len(argv) else None
+    if command == "mcp":
+        if leading:
+            sys.stderr.write("ardia: put MCP options after mcp\n")
+            return 2
+        from ardia_cli import mcp
+        return mcp.main(argv[index + 1:])
     if command == "browse":
         return run_browse(leading, argv[index + 1:])
     if command == "notes":

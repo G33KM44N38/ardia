@@ -1,3 +1,4 @@
+import { startAgentControl } from "./state/automation/agentControl";
 import "./platform/nativeEvents";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { AppRegistry, unstable_batchedUpdates } from "react-native";
@@ -61,6 +62,7 @@ startCliControl();
 startOpenWhenDone();
 afterFirstWindow(startUserScripts);
 afterFirstWindow(startAutomation);
+afterFirstWindow(startAgentControl);
 afterFirstWindow(startSharedFolders);
 startMemoryTrim();
 if (__DEV__ || perfProbeEnabled) require("./components/dev/devHarness").startDevHarness();

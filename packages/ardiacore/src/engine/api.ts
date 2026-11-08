@@ -41,6 +41,7 @@ export type EngineCalls = {
   "engine.cliControlStatus": [{}, CliControlStatus];
   "engine.setCliControl": [{ on: boolean }, CliControlStatus];
   "engine.setCliActiveTab": [{ tabId: string | null }, CliControlStatus];
+  "engine.agentPage": [Record<string, unknown>, Record<string, unknown>];
   "engine.cliTabTargets": [{ tabIds: string[] }, Record<string, CliTabTarget>];
 
   "tabs.routeLinkTabs": [{ urls: string[] }, LinkRoute];

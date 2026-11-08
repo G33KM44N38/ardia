@@ -141,7 +141,7 @@ static bool MigratedKeychainReady() {
   if (!ArdiaLaunchConfig.shared.background) {
     CFOptionFlags response = 0;
     CFUserNotificationDisplayAlert(0, kCFUserNotificationStopAlertLevel, nullptr, nullptr, nullptr,
-      CFSTR("Ardia Routing kept your migrated data closed"),
+      CFSTR("Ardia Fork kept your migrated data closed"),
       CFSTR("This copy needs a developer signature and access to the existing Ardia Safe Storage key. Unlock your login keychain and try again. No key or browser data has been changed."),
       CFSTR("Quit"), nullptr, nullptr, &response);
   }

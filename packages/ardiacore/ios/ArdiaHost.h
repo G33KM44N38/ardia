@@ -37,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)stopCapture:(NSString *)tabId NS_SWIFT_NAME(stopCapture(tabId:));
 + (BOOL)showAutofillSuggestions:(NSString *)tabId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(tabId:passwords:));
 + (int)chromeTabIdOfTab:(NSString *)tabId NS_SWIFT_NAME(chromeTabId(ofTab:));
++ (void)agentPage:(NSDictionary *)request completion:(void (^)(NSDictionary *))completion NS_SWIFT_NAME(agentPage(_:completion:));
 + (void)cliTabTargets:(NSArray<NSString *> *)tabIds completion:(void (^)(NSDictionary<NSString *, id> *targets))completion
     NS_SWIFT_NAME(cliTabTargets(_:completion:));
 + (BOOL)isPrivateProfile:(NSString *)profile NS_SWIFT_NAME(isPrivateProfile(_:));

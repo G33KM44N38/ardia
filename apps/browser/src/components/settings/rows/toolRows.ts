@@ -192,6 +192,10 @@ export const toolRows = {
       },
     },
     {
+      section: "Agents",
+      rows: { agents: { advanced: true, title: "Allow agent connections", keywords: ["mcp", "agents", "permissions", "profiles", "approve"] } },
+    },
+    {
       section: "Command line",
       rows: {
         cliControl: { advanced: true, title: "Let the ardia command control Ardia", keywords: ["cli", "terminal", "devtools", "automation", "remote debugging"] },

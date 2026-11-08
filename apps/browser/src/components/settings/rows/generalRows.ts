@@ -88,28 +88,6 @@ export const generalRows = {
       },
     },
   ],
-  links: [
-    {
-      section: "Air Traffic Control",
-      rows: {
-        routes: {
-          title: "Routes",
-          description: "Choose where specific sites open. The first route that matches wins.",
-          keywords: ["air traffic control", "atc", "route", "routes", "rules", "link routing", "open in", "contains", "is equal to", "new route", "spaces", "tab group"],
-        },
-      },
-    },
-    {
-      section: "Links from other apps",
-      rows: {
-        otherApps: {
-          title: "Open links from other apps in",
-          description: "Where a link from Discord, Slack or Mail opens when no route matches it.",
-          keywords: ["default", "little ardia", "external links", "most recent", "discord", "slack", "mail"],
-        },
-      },
-    },
-  ],
   profiles: [
     { section: "New windows open with", rows: { defaultProfile: { title: "Default profile", description: "Used for new windows. Links from other apps open in the profile you used last.", keywords: ["new window"] } } },
     {

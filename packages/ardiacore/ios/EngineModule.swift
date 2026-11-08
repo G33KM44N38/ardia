@@ -40,6 +40,11 @@ public class EngineModule: Module {
     "setCliControl": { args, reply in
       EngineCall.passing("ac_cli_control", profile: args.profile, args: ["on": try args.bool("on")], reply: reply)
     },
+    "agentPage": { args, reply in
+      var request = args.values
+      request["profile"] = args.profile
+      ArdiaHost.agentPage(request) { reply.ok($0) }
+    },
     "cliTabTargets": { args, reply in
       ArdiaHost.cliTabTargets(try args.strings("tabIds")) { reply.ok($0) }
     },
