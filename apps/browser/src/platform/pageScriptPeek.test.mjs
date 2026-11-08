@@ -768,6 +768,19 @@ test("a routed click takes the page's <base target>: _blank opens a tab, a named
   assert.equal(routes(env).length, 2);
 });
 
+test("a route waits for the page's own click handlers: a click they cancel stays theirs, a link they rewrite routes by its new address", () => {
+  const env = environment();
+  env.handlers.routeConfig({ routes: [{ match: "contains", pattern: "work.example", profile: "work" }], self: "personal" });
+  const a = env.link("https://work.example/menu");
+  const handled = env.gesture([a], {}, { page: (e) => e.preventDefault() });
+  assert.ok(handled.defaultPrevented);
+  assert.deepEqual(routes(env), []);
+  const b = env.link("https://page.example/out");
+  const rewritten = env.gesture([b], {}, { page: () => b.setAttribute("href", "https://work.example/landing") });
+  assert.ok(rewritten.defaultPrevented);
+  assert.deepEqual(routes(env).map((r) => r.url), ["https://work.example/landing"]);
+});
+
 test("a route wins over links to other sites: the click is routed, not peeked", () => {
   const env = environment();
   env.handlers.peekConfig(siteConfig());

@@ -854,18 +854,38 @@
       const route = routeFor(url);
       return !!route && !(typeof route.profile === "string" && route.profile === ownProfile);
     };
-    const routedClick = (e, how) => {
-      if (!ownProfile || !linkRoutes.length || !e.isTrusted || e.defaultPrevented || clickDetail(e) === 0 || ctrlKey(e) || altKey(e)) return;
-      const hit = linkAt(e);
-      if (!peekable(hit) || chosen(e) || hit.url.length > 8192) return;
-      const opens = routedOpens(hit.link);
-      if (!opens || !routed(hit.url)) return;
+    const routeUnhandledClick = (e, link, how) => {
+      if (defaultPrevented(e)) return;
+      const url = linkUrl(link);
+      if (!peekable({ link, url, path: [] }) || url.length > 8192) return;
+      const opens = routedOpens(link);
+      if (!opens || !routed(url)) return;
       apply(preventDefault, e, []);
-      send("route", { url: hit.url, how, opens: metaKey(e) ? "tab" : opens, origin: pageOrigin });
+      send("route", { url, how, opens: metaKey(e) ? "tab" : opens, origin: pageOrigin });
     };
     addEventListener(
       "click",
-      guard((e) => button(e) === 0 && routedClick(e, metaKey(e) ? (shiftKey(e) ? "foreground" : "background") : shiftKey(e) ? "window" : "foreground")),
+      guard((e) => {
+        if (button(e) !== 0 || !ownProfile || !linkRoutes.length || !e.isTrusted || clickDetail(e) === 0 || ctrlKey(e) || altKey(e)) return;
+        const hit = linkAt(e);
+        if (!peekable(hit) || chosen(e)) return;
+        const how = metaKey(e) ? (shiftKey(e) ? "foreground" : "background") : shiftKey(e) ? "window" : "foreground";
+        let decided = false;
+        const decide = guard((ev) => {
+          if (ev !== e || decided) return;
+          decided = true;
+          routeUnhandledClick(e, hit.link, how);
+        });
+        apply(listen, window, ["click", decide]);
+        apply(scheduleTimeout, window, [
+          guard(() => {
+            apply(unlisten, window, ["click", decide]);
+            decided = true;
+          }),
+          0,
+        ]);
+      }),
+      true,
     );
     let press = null;
     let peeked = null;
