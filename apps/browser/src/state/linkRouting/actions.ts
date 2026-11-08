@@ -98,7 +98,7 @@ export function routeTypedUrl(url: string, from: { windowId: string; tabId?: str
     const placement = placeLinkFromProfile(now, target, profileId, source);
     if (placement) return void openAtPlacement(placement, open);
     if (from.tabId && from.disposition === "current") return now.navigate(from.tabId, target, { userInitiated: true, gated: true });
-    if (from.newTab && from.disposition !== "newWindow") return openAtNewTabTarget(w.id, from.newTab, target, true);
+    if (from.newTab && from.disposition !== "newWindow" && now.windows[w.id]?.profileId === profileId) return openAtNewTabTarget(w.id, from.newTab, target, true);
     openAtPlacement({ kind: "profile", profileId }, open);
   });
   return true;

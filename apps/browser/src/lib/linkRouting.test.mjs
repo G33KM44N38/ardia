@@ -218,6 +218,29 @@ test("a routed click already at its destination opens the way its keys say: âŒ˜â
   assert.equal(S().tabs[source].page.nav?.url, "https://mail.example/here");
 });
 
+test("a new-tab bar URL whose slow hook answers after the window changed profile opens in the profile it was typed in", async () => {
+  const { setOpeningGate } = await import("../state/tabs/openingGate.ts");
+  const { routeTypedUrl } = await import("../state/linkRouting/actions.ts");
+  S().hydrate({});
+  const work = S().createProfile({ name: "Work" });
+  const play = S().createProfile({ name: "Play" });
+  S().updateSettings({ linkRouting: { routes: [route("r", "contains", "slow.example", { kind: "profile", profileId: work })], defaultDestination: RECENT } });
+  const w = S().createWindow({ url: "https://a.example/" });
+  const personal = S().windows[w].profileId;
+  let answer;
+  setOpeningGate((url) => (url.startsWith("https://slow.example/") ? new Promise((resolve) => (answer = resolve)) : null));
+  try {
+    assert.equal(routeTypedUrl("https://slow.example/x", { windowId: w, disposition: "current", newTab: { kind: "list" } }), true);
+    S().switchProfile(w, play);
+    answer({ url: "https://unrouted.example/" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const opened = Object.values(S().tabs).filter((x) => (x.page?.nav?.url ?? x.url) === "https://unrouted.example/");
+    assert.deepEqual(opened.map((x) => x.profileId), [personal]);
+  } finally {
+    setOpeningGate(null);
+  }
+});
+
 test("a typed URL's slow tab.opening answer loses to a newer navigation of the same tab", async () => {
   const { setOpeningGate } = await import("../state/tabs/openingGate.ts");
   const { routeTypedUrl } = await import("../state/linkRouting/actions.ts");
