@@ -144,21 +144,46 @@ test("scrubText removes emails, secrets, URL queries and home paths", () => {
     ["AKIAABCDEFGHIJKLMNOP", "[secret]"],
     ["xoxb-123456789012-abcdefghij", "[secret]"],
     [`jwt ${jwt}`, "jwt [secret]"],
-    ["Authorization: Bearer abcdefghijklmnop1234", "Authorization: Bearer [secret]"],
+    ["Authorization: Bearer abcdefghijklmnop1234", "Authorization: [secret]"],
     ["see https://example.com/path?token=abc&x=1#frag.", "see https://example.com/path."],
     ["(https://user:pw@host.dev/a?b)", "(https://host.dev/a)"],
     ["crash in /Users/jane/Library/Logs and /home/bob/x", "crash in /Users/[user]/Library/Logs and /home/[user]/x"],
     ["file:///Users/jane/a.html?x=1", "file:///Users/[user]/a.html"],
     ["Bearer short", "Bearer short"],
     ["the password field is broken", "the password field is broken"],
-    ["password=hunter2 then it failed", "password=[secret] then it failed"],
+    ["password=hunter2 then it failed", "password=[secret]"],
     ["X-Api-Key: short-secret", "X-Api-Key: [secret]"],
     ['Cookie: session="shortsecret"; other=anothersecret', "Cookie: [secret]"],
     ["it sent Bearer abc123 and got 401", "it sent Bearer [secret] and got 401"],
-    ["OPENAI_API_KEY=abc123 python x.py", "OPENAI_API_KEY=[secret] python x.py"],
+    ["OPENAI_API_KEY=abc123 python x.py", "OPENAI_API_KEY=[secret]"],
     ["my sid=abc; done", "my sid=[secret]; done"],
-    ["curl -u me:pass https://x.com/a", "curl -u [secret] https://x.com/a"],
+    ["curl -u me:pass https://x.com/a", "curl -u [secret]"],
     ["the session expired after auth, token refresh broke", "the session expired after auth, token refresh broke"],
+    ['password="part1\\"part2" then', "password=[secret]"],
+    ["curl --password hunter2 https://x.dev", "curl --password [secret]"],
+    ['Authorization: Digest username="bob",\n  response="secretresponse",\n\topaque="tab"\nAccept: text/html', "Authorization: [secret]\nAccept: text/html"],
+    ["curl -H 'Authorization: Bearer abc' --header \"X-Api-Key: k123\" -H 'Cookie: a=b; c=d' -H 'Accept: text/html' https://e.com/api?q=1", "curl -H 'Authorization: [secret]"],
+    [`curl --password "part1"'part2' x`, "curl --password [secret]"],
+    ["curl --password part1\\ part2", "curl --password [secret]"],
+    ['PASSWORD="part1\npart2"\nNEXT=ok', "PASSWORD=[secret]\nNEXT=ok"],
+    ["Authorization: Digest realm=\"api\",\n  username*=UTF-8''bob,\n  response=\"part1\",\n  opaque=\"part2\"\nAccept: text/html", "Authorization: [secret]\nAccept: text/html"],
+    ["Typing lags in the password field on github.com", "Typing lags in the password field on github.com"],
+    ["digest of the week", "digest of the week"],
+    ["private_key: -----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIKEYBODY91\n-----END PRIVATE KEY-----\nnext ok", "private_key: [secret]\nnext ok"],
+    ["curl --password \\\nforgedPass91 https://example.com\nthen it crashed", "curl --password [secret]\nthen it crashed"],
+    ["access_tokens:\n- forgedToken91\n- forgedToken92\nother: fine", "access_tokens:[secret]\nother: fine"],
+    ["curl -udemo:forgedPass91 https://example.com", "curl -u[secret]"],
+    ['const body = "{\\"password\\":\\"forgedPass91\\"}";', 'const body = "{\\"password\\":[secret]'],
+    ["DATABASE_URL=postgresql://demo:forgedPass91@localhost:5432/app", "DATABASE_URL=postgresql://localhost:5432/app"],
+    ['PASSWORD="""\nfirstSegment91"\nsecondSegment92\n"""\nafter ok', "PASSWORD=[secret]\nafter ok"],
+    ["curl -H 'Authorization: Bearer forgedToken91' https://example.com\n1. open a tab\n2. it crashes", "curl -H 'Authorization: [secret]\n1. open a tab\n2. it crashes"],
+    ["-update the sidebar", "-update the sidebar"],
+    ["access_tokens: # test API\n- demoSecret91\nnext: ok", "access_tokens: [secret]\nnext: ok"],
+    ["access_tokens:\n\n- demoSecret92\nnext: ok", "access_tokens:[secret]\n\nnext: ok"],
+    ['curl --password \\\n"demoPart91\ndemoPart92"\nafter ok', "curl --password [secret]\nafter ok"],
+    ["Here's my config: PASSWORD='demoPart93\ndemoPart94'\nafter ok", "Here's my config: PASSWORD=[secret]\nafter ok"],
+    ["Here's the request: curl --password demoSecret95 https://example.com\n1. Open a tab\nActual: blank tab", "Here's the request: curl --password [secret]\n1. Open a tab\nActual: blank tab"],
+    ["It doesn't work when I'm signed in", "It doesn't work when I'm signed in"],
   ];
   for (const [input, expected] of cases) assert.equal(scrubText(input), expected, input);
   const key = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\ndef\n-----END OPENSSH PRIVATE KEY-----";
@@ -189,6 +214,16 @@ test("issueFor puts only public-safe fields in the issue", () => {
   assert.match(issue.body, /\| macOS \| 26\.1 \|/);
   assert.match(issue.body, /https:\/\/dash\.ardia\.dev\/feedback\/FB-AB23/);
   for (const secret of ["jane@x.io", "secret.example", "recording.mp4", "400", INSTALL, "arm64"]) assert.ok(!issue.body.includes(secret), secret);
+  const leaky = issueFor({ ...report, title: "password=hunter2", description: 'password="part1\\"part2"\nAuthorization: Digest username="bob",\n  response="secretresponse"\ncurl --password hunter3 -H "X-Api-Key: short-secret"\nCookie: session="shortsecret"; other=anothersecret\ncurl --password "part3"\'part4\' x\ncurl --password part5\\ part6\nPASSWORD="part7\npart8"\nAuthorization: Digest realm="api",\n  username*=UTF-8\'\'bob,\n  response="part9",\n  opaque="part10"' }, "https://d");
+  const leaky2 = issueFor({ ...report, title: "t", description: ["private_key: -----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIKEYBODY91\n-----END PRIVATE KEY-----", "curl --password \\\nforgedPass91 https://example.com", "access_tokens:\n- forgedToken93", "curl -udemo:forgedPass94 https://example.com", 'const body = "{\\"password\\":\\"forgedPass95\\"}";', "DATABASE_URL=postgresql://demo:forgedPass96@localhost:5432/app", 'PASSWORD="""\nfirstSegment97"\nsecondSegment98\n"""', "curl -H 'Authorization: Bearer forgedToken99' https://example.com", "1. open a tab"].join("\n") }, "https://d");
+  for (const secret of ["KEYBODY91", "forgedPass91", "forgedToken93", "forgedPass94", "forgedPass95", "forgedPass96", "firstSegment97", "secondSegment98", "forgedToken99"]) assert.ok(!leaky2.body.includes(secret), secret);
+  assert.ok(leaky2.body.includes("1. open a tab"));
+  const leaky3 = issueFor({ ...report, title: "t", description: "access_tokens: # test API\n- demoSecret81\n\ncurl --password \\\n\"demoPart82\ndemoPart83\"\nHere's my config: PASSWORD='demoPart84\ndemoPart85'\nHere's the request: curl --password demoSecret86 https://example.com\n1. Open a tab" }, "https://d");
+  for (const secret of ["demoSecret81", "demoPart82", "demoPart83", "demoPart84", "demoPart85", "demoSecret86"]) assert.ok(!leaky3.body.includes(secret), secret);
+  assert.ok(leaky3.body.includes("1. Open a tab"));
+  for (const secret of ["hunter2", "hunter3", "part1", "part2", "part3", "part4", "part5", "part6", "part7", "part8", "part9", "part10", "secretresponse", "short-secret", "shortsecret", "anothersecret"]) {
+    assert.ok(!leaky.title.includes(secret) && !leaky.body.includes(secret), secret);
+  }
   const cli = issueFor({ ...report, source: "cli", cli_version: "0.4.0", app_version: null }, "https://d");
   assert.match(cli.body, /\| Version \| CLI 0\.4\.0 \|/);
 });

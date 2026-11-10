@@ -32,7 +32,7 @@ import { groupTree, regrouped, splitsWithin, withSplitsBack } from "./groupMoves
 import { commonGroup, orderSections } from "../groups/groups";
 import { groupOf } from "../pins/tabGrouping";
 import { focusedWindowOf } from "./ui";
-import { closedWindowOf, withoutLastWindowMark } from "./closedWindow";
+import { closedWindowOf, withoutLastWindowMarks } from "./closedWindow";
 
 export type CreateWindowOptions = {
   profileId?: string;
@@ -48,6 +48,8 @@ export type CreateWindowOptions = {
 
 export type CloseWindowOptions = { keepsLastWindow?: boolean };
 
+export type MoveOptions = { background?: boolean };
+
 export type WindowsSlice = {
   windows: Record<string, BrowserWindow>;
   windowOrder: string[];
@@ -60,11 +62,11 @@ export type WindowsSlice = {
   setWindowFullScreen(id: string, on: boolean): void;
   toggleSidebar(windowId: string): void;
   switchProfile(windowId: string, profileId: string): void;
-  moveTabsToWindow(tabIds: string[], windowId: string | null): string | undefined;
+  moveTabsToWindow(tabIds: string[], windowId: string | null, options?: MoveOptions): string | undefined;
   returnRefusedMove(tabId: string, fromWindowId: string): void;
-  moveTabToProfile(tabId: string, profileId: string): void;
-  moveGroupToWindow(groupId: string, windowId: string | null): string | undefined;
-  moveGroupToProfile(groupId: string, profileId: string): void;
+  moveTabToProfile(tabId: string, profileId: string, options?: MoveOptions): void;
+  moveGroupToWindow(groupId: string, windowId: string | null, options?: MoveOptions): string | undefined;
+  moveGroupToProfile(groupId: string, profileId: string, options?: MoveOptions): void;
   mergeAllWindows(windowId: string): void;
   reopenClosed(windowId?: string | null): void;
   reopenClosedTab(windowId?: string | null): void;
@@ -202,8 +204,9 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     const tabs = tabsClosedWithWindow(s, id);
     const small = isSmallWindow(w);
     const last = isLastRegularWindow(s, id);
-    const entry = w.kind !== "private" && !small && tabs.some((t) => t.url) ? closedWindowOf(s, w, tabs, last && keepsLastWindow) : null;
-    const kept = last ? s.closedWindows.map(withoutLastWindowMark) : s.closedWindows;
+    const keeps = last && keepsLastWindow && w.tabIds.some((t) => s.tabs[t]?.url);
+    const entry = w.kind !== "private" && !small && (keeps || tabs.some((t) => t.url)) ? closedWindowOf(s, w, tabs, keeps) : null;
+    const kept = last ? withoutLastWindowMarks(s.closedWindows) : s.closedWindows;
     const closedWindows = entry ? [...kept, entry].slice(-MAX_CLOSED_WINDOWS) : kept;
     const next = removeTabs(s, w.tabIds, small);
     set({
@@ -266,7 +269,7 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     set(s);
   },
 
-  moveTabsToWindow(tabIds, windowId) {
+  moveTabsToWindow(tabIds, windowId, { background = false } = {}) {
     const s = get();
     if (windowId === null) {
       const first = s.tabs[tabIds[0] ?? ""];
@@ -274,7 +277,7 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
       return get().createWindow({ profileId: first.profileId, tabIds });
     }
     let next = moveTabsInto(s, tabIds, windowId);
-    const last = findLast(tabIds, (id) => next.tabs[id]?.windowId === windowId);
+    const last = background ? undefined : findLast(tabIds, (id) => next.tabs[id]?.windowId === windowId);
     if (last) next = apply(next, activated(next, last));
     set(next);
     return windowId;
@@ -287,31 +290,31 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     set(moveTabsInto(s, [tabId], fromWindowId));
   },
 
-  moveTabToProfile(tabId, profileId) {
+  moveTabToProfile(tabId, profileId, { background = false } = {}) {
     const s = get();
     const tab = s.tabs[tabId];
     const w = tab && s.windows[tab.windowId];
-    if (tab && isRegularWindow(w) && isTopApp(tab) && topAppsShared(s, tab.profileId, profileId)) {
+    if (!background && tab && isRegularWindow(w) && isTopApp(tab) && topAppsShared(s, tab.profileId, profileId)) {
       get().switchProfile(w.id, profileId);
       const now = get();
       const copy = now.windows[w.id]?.tabIds.find((id) => now.tabs[id]?.profileId === profileId && isTopApp(now.tabs[id]!) && pinKeyOf(now.tabs[id]!) === pinKeyOf(tab));
       if (copy) return get().activate(copy);
     }
     const next = intoProfile(s, tabId, profileId);
-    if (next !== s) set(apply(next, activated(next, tabId)));
+    if (next !== s) set(background ? next : apply(next, activated(next, tabId)));
   },
 
-  moveGroupToWindow(groupId, windowId) {
+  moveGroupToWindow(groupId, windowId, options) {
     const g = get().groups[groupId];
     if (!g || g.pinned) return undefined;
     const tree = groupTree(get().groups, groupId);
     const kept = splitsWithin(get(), g.tabIds);
-    const target = get().moveTabsToWindow(g.tabIds, windowId);
+    const target = get().moveTabsToWindow(g.tabIds, windowId, options);
     if (target) set(withSplitsBack(regrouped(get(), tree, target, g.profileId, false), kept, target));
     return target;
   },
 
-  moveGroupToProfile(groupId, profileId) {
+  moveGroupToProfile(groupId, profileId, { background = false } = {}) {
     const s = get();
     const g = s.groups[groupId];
     if (!g || g.profileId === profileId || !s.profiles[profileId] || isIncognitoProfile(g.profileId)) return;
@@ -319,7 +322,7 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     const kept = splitsWithin(s, g.tabIds);
     let next = g.tabIds.reduce((acc, id) => intoProfile(acc, id, profileId), s);
     next = withSplitsBack(regrouped(next, tree, g.windowId, profileId, true), kept, g.windowId);
-    const last = findLast(g.tabIds, (id) => next.tabs[id]?.profileId === profileId);
+    const last = background ? undefined : findLast(g.tabIds, (id) => next.tabs[id]?.profileId === profileId);
     set(last ? apply(next, activated(next, last)) : next);
   },
 
