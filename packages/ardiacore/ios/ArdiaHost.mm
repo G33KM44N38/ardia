@@ -299,7 +299,10 @@ static void (^gQuitCancelledHandler)(void);
       }];
       return;
     }
-    NSMutableDictionary *payload = [request mutableCopy];
+    NSMutableDictionary *payload = [NSMutableDictionary dictionary];
+    for (NSString *key in @[@"connection", @"operation", @"url", @"snapshot", @"ref", @"text", @"key", @"delta", @"script"]) {
+      if (request[key]) payload[key] = request[key];
+    }
     payload[@"snapshotId"] = NSUUID.UUID.UUIDString;
     NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
     if (!json || json.length > 65536) { completion(@{@"error": @"Agent request too large"}); return; }
