@@ -6,4 +6,4 @@ helper="$repo/output/agent-tools/Ardia Fork MCP"
 if [[ ! -x "$helper" ]]; then
   python3 "$repo/scripts/build-agent-helper.py" >&2
 fi
-exec "$helper" -m ardia_cli.mcp "$@"
+exec "$helper" -m ardia_cli.mcp --client-id ardia-fork-mcp "$@"

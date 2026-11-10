@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { startAgentSocket, stopAgentSocket, replyToAgent, grantAgentAccess, revokeAgentAccess, onAgentRequest, onAgentClose, type ControlRequest } from "../../platform/automation";
+import { startAgentSocket, stopAgentSocket, replyToAgent, grantAgentAccess, revokeAgentAccess, onAgentRequest, onAgentClose, agentAccess, agentStatus, type AgentGrant, type ControlRequest } from "../../platform/automation";
 import { call } from "../../platform/engine";
 import { cliControlStatus, onCliControlChanged } from "../../platform/cli";
 import { engineProfile } from "../browser/model";
@@ -8,11 +8,12 @@ import { isEligibleTab } from "./automationWindows";
 import { parseRequest } from "./automationMethods";
 import { capture } from "../telemetry/client";
 
-export type AgentSession = { connection: number; generation: number; name: string; profiles: string[]; actions: boolean; scripts: boolean; approved: boolean; expires: number };
-export const useAgentControl = create<{ enabled: boolean; reason: string | null; sessions: AgentSession[] }>()(() => ({ enabled: false, reason: null, sessions: [] }));
+export type AgentSession = AgentGrant & { connection: number; generation: number; approved: boolean };
+export const useAgentControl = create<{ enabled: boolean; reason: string | null; sessions: AgentSession[]; remembered: AgentGrant[] }>()(() => ({ enabled: false, reason: null, sessions: [], remembered: [] }));
 let generation: number | null = null;
 let revision = 0;
 let started = false;
+const tools = new Set(["connect", "list_profiles", "list_tabs", "open_tab", "close_tab", "snapshot", "click", "fill", "press_key", "scroll", "screenshot", "navigate", "script"]);
 const busy = new Set<number>();
 const closed = new Set<number>();
 const session = (connection: number) => useAgentControl.getState().sessions.find(s => s.connection === connection && s.generation === generation);
@@ -29,7 +30,8 @@ export async function setAgentControl(enabled: boolean) {
   generation = null;
   closed.clear();
   useAgentControl.setState({ enabled: false, sessions: [], reason: null });
-  await stopAgentSocket();
+  await stopAgentSocket(enabled);
+  await refreshRemembered();
   if (!enabled || mine !== revision) return;
   const status = await cliControlStatus();
   if (mine !== revision) return;
@@ -38,31 +40,53 @@ export async function setAgentControl(enabled: boolean) {
     return;
   }
   const socket = await startAgentSocket();
-  if (mine !== revision) { await stopAgentSocket(); return; }
+  if (mine !== revision) { await stopAgentSocket(true); return; }
   generation = socket.state === "on" ? socket.generation : null;
   useAgentControl.setState({ enabled: generation !== null, reason: socket.reason ?? null });
 }
 
-export async function approveAgent(connection: number, profiles: string[], actions: boolean, scripts: boolean) {
-  const current = session(connection);
-  const ids = profiles.filter(id => profilesOf().some(p => p.id === id));
-  if (!current || current.approved || !ids.length) return;
-  const granted = await grantAgentAccess(connection, current.generation, ids.map(id => engineProfile(useBrowser.getState(), id)), actions, actions && scripts);
-  if (!granted || session(connection) !== current) return;
-  useAgentControl.setState(s => ({ sessions: s.sessions.map(a => a === current ? { ...a, profiles: ids, actions, scripts: actions && scripts, approved: true, expires: Date.now() + 3600000 } : a) }));
-  capture("agent_control", { action: "approved", profiles: ids.length, scripts: actions && scripts });
+let viewRevision = 0;
+async function refreshRemembered() {
+  const mine = ++viewRevision;
+  const status = await agentStatus();
+  if (mine === viewRevision) useAgentControl.setState({ remembered: status.remembered, ...(status.storageFailed ? { reason: "Agent access storage is unavailable. Existing data was left in place." } : {}) });
+  return status;
 }
 
-export async function revokeAgent(connection: number) {
-  useAgentControl.setState(s => ({ sessions: s.sessions.filter(a => a.connection !== connection) }));
-  await revokeAgentAccess(connection);
+export async function approveAgent(connection: number, profiles: string[], actions: boolean, scripts: boolean, remember = false) {
+  const current = session(connection);
+  const ids = [...new Set(profiles.filter(id => profilesOf().some(p => p.id === id)))];
+  if (!current || current.approved || !ids.length) return;
+  const granted = await grantAgentAccess(connection, current.generation, current.authorization, Object.fromEntries(ids.map(id => [id, engineProfile(useBrowser.getState(), id)])), actions, actions && scripts, remember);
+  if (!granted || session(connection) !== current) { if (!granted) await refreshRemembered(); return; }
+  const native = await agentAccess(connection, current.generation, current.authorization, "", "", "connect");
+  if (!native?.approved || session(connection) !== current) return;
+  useAgentControl.setState(s => ({ sessions: s.sessions.map(a => a === current ? { ...a, ...native, approved: true } : a) }));
+  await refreshRemembered();
+  capture("agent_control", { action: remember ? "remembered" : "approved", profiles: ids.length, scripts: actions && scripts });
+}
+
+export async function revokeAgent(connection: number, identity = session(connection)?.identity ?? "") {
+  ++viewRevision;
+  useAgentControl.setState(s => ({ sessions: s.sessions.filter(a => a.connection !== connection && (!identity || a.identity !== identity)), remembered: s.remembered.filter(a => a.identity !== identity) }));
+  const saved = await revokeAgentAccess(connection, identity);
+  await refreshRemembered();
+  if (!saved) useAgentControl.setState({ reason: "Revocation could not be saved. Agent access is blocked until storage is repaired." });
   capture("agent_control", { action: "revoked" });
 }
 
 function authorized(connection: number) {
   const current = session(connection);
-  if (!current?.approved || current.expires <= Date.now() || !useAgentControl.getState().enabled) throw new Error("Approve this connection in Settings → Advanced → Agents. Approval lasts one hour.");
+  if (!current?.approved || !current.remembered && current.expires <= Date.now() || !useAgentControl.getState().enabled) throw new Error("Approve this connection in Settings → Advanced → Agents.");
   return current;
+}
+
+async function checkAuthority(agent: AgentSession, profile: string, operation: string) {
+  const state = useBrowser.getState();
+  if (!state.profiles[profile] || profile.startsWith("incognito")) throw new Error("Profile unavailable");
+  const nativeProfile = engineProfile(state, profile);
+  const native = await agentAccess(agent.connection, agent.generation, agent.authorization, profile, nativeProfile, operation);
+  if (!native?.approved || native.authorization !== agent.authorization || session(agent.connection) !== agent || engineProfile(useBrowser.getState(), profile) !== nativeProfile || !useAgentControl.getState().enabled) throw new Error("Agent access expired or was revoked");
 }
 
 function tabFor(agent: AgentSession, id: unknown) {
@@ -72,22 +96,36 @@ function tabFor(agent: AgentSession, id: unknown) {
   return tab;
 }
 
-async function dispatch(connection: number, method: string, params: Record<string, unknown>) {
+async function dispatch(connection: number, method: string, params: Record<string, unknown>, requestAuthorization?: string) {
   if (method === "connect") {
-    const existing = session(connection);
-    if (!existing) {
-      const name = typeof params.name === "string" ? params.name.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f]/g, "").slice(0, 60).trim() : "Agent";
-      useAgentControl.setState(s => ({ sessions: [...s.sessions, { connection, generation: generation!, name: name || "Agent", profiles: [], actions: false, scripts: false, approved: false, expires: 0 }] }));
-    }
-    return { approved: !!session(connection)?.approved, instructions: "Approve this connection in Settings → Advanced → Agents." };
+    const native = await agentAccess(connection, generation!, requestAuthorization ?? "", "", "", "connect");
+    if (!native || closed.has(connection) || !useAgentControl.getState().enabled) throw new Error("Connection expired");
+    const agent = { ...native, connection, generation: generation!, approved: !!native.approved };
+    useAgentControl.setState(s => ({ sessions: [...s.sessions.filter(a => a.connection !== connection), agent] }));
+    if (native.approved) capture("agent_control", { action: "reconnected", profiles: native.profiles.length, scripts: native.scripts });
+    return { approved: agent.approved, instructions: "Approve this connection in Settings → Advanced → Agents." };
   }
   const agent = authorized(connection);
-  if (method === "list_profiles") return profilesOf().filter(p => agent.profiles.includes(p.id)).map(p => ({ id: p.id, name: p.name }));
-  if (method === "list_tabs") return Object.values(useBrowser.getState().tabs).filter(t => {
-    try { return !!tabFor(agent, t.id); } catch { return false; }
-  }).map(t => ({ id: t.id, profile: t.profileId, url: t.url, title: t.title }));
+  if (requestAuthorization !== agent.authorization) throw new Error("Request authorization changed; retry the request");
+  if (method === "list_profiles" || method === "list_tabs") {
+    let available = 0;
+    const result: { id: string; name?: string; profile?: string; url?: string; title?: string }[] = [];
+    for (const profile of profilesOf().filter(p => agent.profiles.includes(p.id))) {
+      try {
+        await checkAuthority(agent, profile.id, method);
+        available++;
+        if (method === "list_profiles") result.push({ id: profile.id, name: profile.name });
+        else for (const tab of Object.values(useBrowser.getState().tabs)) {
+          try { if (tab.profileId === profile.id && tabFor(agent, tab.id)) result.push({ id: tab.id, profile: tab.profileId, url: tab.url, title: tab.title }); } catch { }
+        }
+      } catch { }
+    }
+    if (!available) throw new Error("No approved profiles are available");
+    return result;
+  }
   if (method === "open_tab") {
     if (!agent.actions || typeof params.profile !== "string" || !agent.profiles.includes(params.profile) || !safeURL(params.url)) throw new Error("Profile or destination not allowed");
+    await checkAuthority(agent, params.profile, method);
     const state = useBrowser.getState();
     const window = Object.values(state.windows).find(w => w.kind !== "private" && agent.profiles.includes(w.profileId));
     if (!window) throw new Error("Open an approved profile in a browser window first");
@@ -97,6 +135,8 @@ async function dispatch(connection: number, method: string, params: Record<strin
   const tab = tabFor(agent, params.tab);
   if (method === "close_tab") {
     if (!agent.actions) throw new Error("Actions were not approved");
+    await checkAuthority(agent, tab.profileId, method);
+    if (tabFor(agent, tab.id).profileId !== tab.profileId) throw new Error("Tab profile changed; retry the request");
     useBrowser.getState().closeTab(tab.id);
     return { ok: true };
   }
@@ -109,7 +149,8 @@ async function dispatch(connection: number, method: string, params: Record<strin
   if (method === "fill" && (typeof params.text !== "string" || params.text.length > 16000)) throw new Error("Text too long");
   if (method === "press_key" && !["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(params.key as string)) throw new Error("Unsupported key");
   if (method === "scroll" && (typeof params.delta !== "number" || !Number.isFinite(params.delta) || Math.abs(params.delta) > 5000)) throw new Error("Scroll delta must be between -5000 and 5000");
-  return call("engine.agentPage", { ...params, connection, generation: agent.generation, profile: engineProfile(useBrowser.getState(), tab.profileId), tab: tab.id, url: tab.url, operation: method });
+  await checkAuthority(agent, tab.profileId, method);
+  return call("engine.agentPage", { ...params, connection, authorization: agent.authorization, stableProfile: tab.profileId, generation: agent.generation, profile: engineProfile(useBrowser.getState(), tab.profileId), tab: tab.id, url: tab.url, operation: method });
 }
 
 export async function handleAgentRequest(request: ControlRequest) {
@@ -124,11 +165,12 @@ export async function handleAgentRequest(request: ControlRequest) {
     const status = await cliControlStatus();
     if (status.state !== "off" || useBrowser.getState().settings.cliControl) { await setAgentControl(false); throw new Error("Global browser control became active; scoped agents stopped"); }
     if (mine !== generation || closed.has(request.connection)) throw new Error("Connection expired");
-    const result = await dispatch(request.connection, method, params);
-    if (mine !== generation || (method !== "connect" && !session(request.connection)?.approved)) return;
+    const result = await dispatch(request.connection, method, params, request.authorization);
+    if (mine !== generation || closed.has(request.connection) || (method !== "connect" && !session(request.connection)?.approved)) return;
     reply(request.connection, id, { result });
     capture("agent_control", { action: "tool", tool: method });
   } catch (failure) {
+    capture("agent_control", { action: "refused", tool: tools.has(method) ? method : "unknown" });
     reply(request.connection, id, error(failure instanceof Error ? failure.message : "Agent action failed"));
   } finally { busy.delete(request.connection); }
 }
@@ -136,8 +178,10 @@ export async function handleAgentRequest(request: ControlRequest) {
 export function startAgentControl() {
   if (started) return;
   started = true;
+  const initialRevision = revision;
+  void refreshRemembered().then(status => { if (status.enabled && revision === initialRevision) return setAgentControl(true); });
   setInterval(() => {
-    for (const agent of useAgentControl.getState().sessions) if (agent.approved && agent.expires <= Date.now()) void revokeAgent(agent.connection);
+    for (const agent of useAgentControl.getState().sessions) if (agent.approved && !agent.remembered && agent.expires <= Date.now()) void revokeAgent(agent.connection);
   }, 15000);
   onAgentRequest(handleAgentRequest);
   onAgentClose( ({ connection }) => {

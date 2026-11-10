@@ -8,8 +8,10 @@ final class ControlSocket {
   static let agents = ControlSocket(socketName: "ArdiaAgents.sock")
   private let socketName: String
   private var lockName: String { socketName + ".lock" }
-  private var agentGrants: [Int: [String: Any]] = [:]
+  private var agentAuthority: AgentAuthorization?
+  private var agentStorageUnavailable = false
   private var authorizationObserver: NSObjectProtocol?
+  private var globalControlBlocked = true
 
   init(socketName: String = "ArdiaControl.sock") {
     self.socketName = socketName
@@ -21,27 +23,85 @@ final class ControlSocket {
     }
   }
 
-  func grantAgent(_ connection: Int, generation: Int, profiles: [String], actions: Bool, scripts: Bool, done: @escaping (Bool) -> Void) {
-    queue.async { [self] in
-      guard self.generation == generation, connections[connection] != nil else { done(false); return }
-      agentGrants[connection] = ["profiles": profiles, "actions": actions, "scripts": scripts, "expires": Date().timeIntervalSince1970 + 3600]
-      done(true)
+  func globalControlChanged(_ state: String) {
+    queue.sync { [self] in
+      globalControlBlocked = state != "off"
+      if globalControlBlocked { stopOnQueue() }
     }
   }
 
-  func revokeAgent(_ connection: Int, done: @escaping () -> Void) {
-    queue.async { [self] in agentGrants.removeValue(forKey: connection); done() }
+  private func authority() -> AgentAuthorization? {
+    if agentAuthority == nil && !agentStorageUnavailable {
+      do { agentAuthority = AgentAuthorization(base: try DocumentStore.url("ArdiaAgents.sock").deletingLastPathComponent()) }
+      catch { agentStorageUnavailable = true }
+    }
+    return agentAuthority
+  }
+
+  func agentStatus(_ done: @escaping ([String: Any]) -> Void) {
+    queue.async { [self] in done(authority()?.status ?? ["enabled": false, "remembered": [], "storageFailed": true]) }
+  }
+
+  func grantAgent(_ connection: Int, generation: Int, revision: String, profiles: [String: String], actions: Bool, scripts: Bool, remember: Bool, done: @escaping (Bool) -> Void) {
+    queue.async { [self] in
+      guard !globalControlBlocked, self.generation == generation, connections[connection] != nil else { done(false); return }
+      done(authority()?.approve(connection, revision: revision, profiles: profiles, actions: actions, scripts: scripts, remember: remember) ?? false)
+    }
+  }
+
+  func revokeAgent(_ connection: Int, identity: String, done: @escaping (Bool) -> Void) {
+    queue.async { [self] in
+      guard let authority = authority() else { done(false); return }
+      let identity = identity.isEmpty ? authority.session(connection)?["identity"] as? String ?? "" : identity
+      let targets = connections.keys.filter { $0 == connection || !identity.isEmpty && authority.session($0)?["identity"] as? String == identity }
+      let saved = authority.revoke(connection: connection, identity: identity.isEmpty ? nil : identity)
+      for target in targets { connections[target]?.close() }
+      done(saved)
+    }
+  }
+
+  func agentAccess(_ connection: Int, generation: Int, revision: String, profile: String, nativeProfile: String, operation: String, done: @escaping ([String: Any]?) -> Void) {
+    queue.async { [self] in
+      guard !globalControlBlocked, generation == self.generation, connections[connection] != nil, let authority = authority() else { done(nil); return }
+      if operation == "connect" { done(authority.session(connection)); return }
+      guard authority.allows(connection, revision: revision, profile: profile, nativeProfile: nativeProfile, operation: operation) else { done(nil); return }
+      done(authority.session(connection))
+    }
   }
 
   private func allowsAgent(_ query: NSDictionary) -> Bool {
-    guard let connection = query["connection"] as? Int, let tagged = query["generation"] as? Int, tagged == generation,
-      connections[connection] != nil, let grant = agentGrants[connection],
-      let expires = grant["expires"] as? Double, expires > Date().timeIntervalSince1970,
-      let profile = query["profile"] as? String, let profiles = grant["profiles"] as? [String], profiles.contains(profile)
-    else { return false }
-    let operation = query["operation"] as? String ?? ""
-    if operation == "script" { return grant["scripts"] as? Bool == true && grant["actions"] as? Bool == true }
-    return operation == "snapshot" || operation == "screenshot" || grant["actions"] as? Bool == true
+    guard !globalControlBlocked, let connection = query["connection"] as? Int, let tagged = query["generation"] as? Int, tagged == generation,
+      connections[connection] != nil, let revision = query["authorization"] as? String, let profile = query["stableProfile"] as? String,
+      let nativeProfile = query["profile"] as? String, let operation = query["operation"] as? String else { return false }
+    return authority()?.allows(connection, revision: revision, profile: profile, nativeProfile: nativeProfile, operation: operation) ?? false
+  }
+
+  private func receive(_ connection: Int, generation: Int, line: String) {
+    guard socketName == "ArdiaAgents.sock" else {
+      sink?.send("onRequest", ["connection": connection, "generation": generation, "line": line]); return
+    }
+    guard let data = line.data(using: .utf8), var request = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+      let method = request["method"] as? String, var params = request["params"] as? [String: Any], let authority = authority() else {
+      connections[connection]?.reply(Self.framed("{\"id\":null,\"error\":{\"message\":\"Invalid agent request\"}}"), ticket: 0); return
+    }
+    let id = request["id"] ?? NSNull()
+    if method == "connect" {
+      guard !globalControlBlocked, authority.connect(connection, params: params) else { refuseAgent(connection, id: id); return }
+      params = ["name": authority.session(connection)?["name"] ?? "Agent"]
+    } else {
+      guard !globalControlBlocked, authority.current(connection) != nil else { refuseAgent(connection, id: id); return }
+      params.removeValue(forKey: "credential")
+      params.removeValue(forKey: "identity")
+    }
+    let fields: Set<String> = ["name", "tab", "profile", "url", "snapshot", "ref", "text", "key", "delta", "destination", "script"]
+    request = ["id": id, "method": method, "params": params.filter { fields.contains($0.key) }]
+    guard let clean = try? JSONSerialization.data(withJSONObject: request), let line = String(data: clean, encoding: .utf8) else { return }
+    sink?.send("onRequest", ["connection": connection, "generation": generation, "authorization": authority.session(connection)?["authorization"] ?? "", "line": line])
+  }
+
+  private func refuseAgent(_ connection: Int, id: Any) {
+    let body: [String: Any] = ["id": id, "error": ["code": "refused", "message": "Agent access refused. Request approval in Settings → Advanced → Agents."]]
+    if let data = try? JSONSerialization.data(withJSONObject: body), let line = String(data: data, encoding: .utf8) { connections[connection]?.reply(Self.framed(line), ticket: 0) }
   }
   static let maxConnections = 16
   static let maxPathBytes = 103
@@ -83,8 +143,9 @@ final class ControlSocket {
     queue.async { [self] in done(startOnQueue()) }
   }
 
-  func stop(_ done: @escaping () -> Void) {
+  func stop(preservePreference: Bool = false, _ done: @escaping () -> Void) {
     queue.async { [self] in
+      if socketName == "ArdiaAgents.sock" && !preservePreference { _ = authority()?.setEnabled(false) }
       stopOnQueue()
       done()
     }
@@ -94,6 +155,10 @@ final class ControlSocket {
     let data = Self.framed(line)
     queue.async { [self] in
       if let target = connections[connection] {
+        if socketName == "ArdiaAgents.sock", let json = line.data(using: .utf8), let body = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any], let result = body["result"] {
+          let pending = (result as? [String: Any])?["approved"] as? Bool == false
+          if !pending && authority()?.current(connection) == nil { refuseAgent(connection, id: body["id"] ?? NSNull()); return }
+        }
         target.reply(data, ticket: ticket)
       } else if ticket > 0 {
         sink?.send("onWritten", ["tickets": [ticket]])
@@ -126,6 +191,10 @@ final class ControlSocket {
   }
 
   private func startOnQueue() -> [String: Any] {
+    if socketName == "ArdiaAgents.sock" {
+      guard !globalControlBlocked else { return refuse("Turn off global command-line control and DevTools before enabling scoped agents.") }
+      guard let authority = authority(), !authority.failed, authority.setEnabled(true) else { return refuse("Agent access storage is unavailable. Existing data was left in place.") }
+    }
     if let bound { return status("on", path: bound.path) }
     let dir: String
     do {
@@ -193,7 +262,7 @@ final class ControlSocket {
   }
 
   private func stopOnQueue() {
-    agentGrants.removeAll()
+    agentAuthority?.stop()
     guard let bound else { return }
     self.bound = nil
     for connection in Array(connections.values) { connection.close() }
@@ -225,11 +294,11 @@ final class ControlSocket {
       let connection = ControlConnection(
         id: nextConnection, fd: fd, queue: queue,
         onLine: { [weak self] connection, line in
-          self?.sink?.send("onRequest", ["connection": connection.id, "generation": generation, "line": line])
+          self?.receive(connection.id, generation: generation, line: line)
         },
         onClose: { [weak self] connection in
           guard let self, self.connections.removeValue(forKey: connection.id) != nil else { return }
-          self.agentGrants.removeValue(forKey: connection.id)
+          self.agentAuthority?.disconnect(connection.id)
           self.sink?.send("onClose", ["connection": connection.id])
         },
         onWritten: { [weak self] tickets in self?.sink?.send("onWritten", ["tickets": tickets]) })

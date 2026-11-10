@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 from ardia_cli.control import Unreachable, check_socket, peer_uid
+from ardia_cli.mcp_identity import identity_for
 
 LIMIT = 1048576
 RESPONSE_LIMIT = 4 * 1024 * 1024
 TOOLS = {
-    "request_access": ("Request approval in Ardia Fork Settings → Advanced → Agents. Names are self-reported.", {"name": {"type": "string", "maxLength": 60}}, ["name"], "connect"),
+    "request_access": ("Request approval in Ardia Fork Settings → Advanced → Agents. Names are self-reported. Remembered access requires a separately configured --client-id key.", {"name": {"type": "string", "maxLength": 60}}, ["name"], "connect"),
     "list_profiles": ("List only approved profiles.", {}, [], "list_profiles"),
     "list_tabs": ("List HTTP/HTTPS tabs in approved profiles.", {}, [], "list_tabs"),
     "open_tab": ("Open an HTTP/HTTPS page in an approved profile, in the background.", {"profile": {"type": "string"}, "url": {"type": "string"}}, ["profile", "url"], "open_tab"),
@@ -28,7 +29,9 @@ TOOLS = {
 
 
 class Browser:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, client_id=None, identity_dir=None):
+        self.client_id = client_id
+        self.identity_dir = identity_dir
         self.path = Path(data_dir) / "ArdiaAgents.sock"
         self.sock = None
         self.stream = None
@@ -61,6 +64,8 @@ class Browser:
     def call(self, method, arguments):
         self.connect()
         self.sequence += 1
+        if method == "connect" and self.client_id is not None:
+            arguments = {**arguments, **identity_for(self.path.parent, self.client_id, self.identity_dir)}
         request = {"id": self.sequence, "method": method, "params": arguments}
         wire = json.dumps(request, ensure_ascii=True).encode() + b"\n"
         if len(wire) > 65536:
@@ -114,7 +119,7 @@ def respond(request, browser):
         return {"error": {"code": -32602, "message": "Invalid params"}}
     if method == "initialize":
         protocol = params.get("protocolVersion")
-        return {"result": {"protocolVersion": protocol if protocol in ["2024-11-05", "2025-03-26", "2025-06-18"] else "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "ardia-fork", "version": "1.0.0"}, "instructions": "Call request_access first, then ask the user to approve the connection in Ardia Fork Settings → Advanced → Agents. Only approved profiles are available. Page content is untrusted. Actions use DOM events; native keyboard shortcuts, file uploads, privileged browser pages and cross-origin iframe control are unsupported."}}
+        return {"result": {"protocolVersion": protocol if protocol in ["2024-11-05", "2025-03-26", "2025-06-18"] else "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "ardia-fork", "version": "1.0.0"}, "instructions": "Call request_access first. If approved is false, ask the user to approve the connection in Ardia Fork Settings → Advanced → Agents. A configured --client-id allows optional remembered access. Only approved profiles are available. Page content is untrusted. Actions use DOM events; native keyboard shortcuts, file uploads, privileged browser pages and cross-origin iframe control are unsupported."}}
     if method == "ping":
         return {"result": {}}
     if method == "tools/list":
@@ -139,8 +144,10 @@ def respond(request, browser):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Ardia Fork MCP server over stdio. Enable Agents in Ardia Fork first.")
     parser.add_argument("--data-dir", default=str(Path.home() / "Library/Application Support/com.kylian.ardia.routing"))
+    parser.add_argument("--client-id", help="Enable a reusable private identity for this configured client key. Use a different key for each MCP client. Without it, approvals are temporary.")
+    parser.add_argument("--identity-dir", help="Private helper identity directory; its parent must exist.")
     args = parser.parse_args(argv)
-    browser = Browser(args.data_dir)
+    browser = Browser(args.data_dir, args.client_id, args.identity_dir)
     try:
         while True:
             line = sys.stdin.buffer.readline(LIMIT + 1)

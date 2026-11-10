@@ -1,6 +1,6 @@
-import { nativeModule, type ControlRequest, type ControlSocketStatus } from "@ardia/shell";
+import { nativeModule, type AgentGrant, type AgentStatus, type ControlRequest, type ControlSocketStatus } from "@ardia/shell";
 
-export type { ControlRequest, ControlSocketStatus };
+export type { AgentGrant, AgentStatus, ControlRequest, ControlSocketStatus };
 
 let bound: ReturnType<typeof nativeModule<"ArdiaAutomation">> | null = null;
 const Automation = () => (bound ??= nativeModule("ArdiaAutomation"));
@@ -14,9 +14,11 @@ export const onControlClose = (listener: (e: { connection: number }) => void) =>
 export const onControlWritten = (listener: (e: { tickets: number[] }) => void) => Automation().addListener("onWritten", listener);
 
 export const startAgentSocket = () => Automation().startAgents();
-export const stopAgentSocket = () => Automation().stopAgents();
+export const stopAgentSocket = (preservePreference = false) => Automation().stopAgents(preservePreference);
+export const agentStatus = () => Automation().agentStatus();
+export const agentAccess = (connection: number, generation: number, revision: string, profile: string, nativeProfile: string, operation: string) => Automation().agentAccess(connection, generation, revision, profile, nativeProfile, operation);
 export const replyToAgent = (connection: number, line: string) => Automation().replyAgent(connection, line);
-export const grantAgentAccess = (connection: number, generation: number, profiles: string[], actions: boolean, scripts: boolean) => Automation().grantAgent(connection, generation, profiles, actions, scripts);
-export const revokeAgentAccess = (connection: number) => Automation().revokeAgent(connection);
+export const grantAgentAccess = (connection: number, generation: number, revision: string, profiles: Record<string, string>, actions: boolean, scripts: boolean, remember: boolean) => Automation().grantAgent(connection, generation, revision, profiles, actions, scripts, remember);
+export const revokeAgentAccess = (connection: number, identity = "") => Automation().revokeAgent(connection, identity);
 export const onAgentRequest = (listener: (request: ControlRequest) => void) => Automation().addListener("onAgentRequest", listener);
 export const onAgentClose = (listener: (event: { connection: number }) => void) => Automation().addListener("onAgentClose", listener);

@@ -1,6 +1,6 @@
 export const SHARING_COPY = {
   toggle: "Share anonymous crash reports and usage stats",
-  agentControl: "Agent control: approval and revocation counts, tool names, number of approved profiles, and whether scripts are allowed. No agent names, profile names, URLs, or page content.",
+  agentControl: "Agent control: temporary and remembered approval, reconnection, revocation and refusal counts, tool names, number of approved profiles, and whether scripts are allowed. No agent names, profile names, URLs, or page content.",
   summary: "Crashes, errors, rough feature counts and speed. Never the sites you visit, anything you type or search, or what's in your tabs.",
   whatsSent: "What's Sent",
   footnote:
