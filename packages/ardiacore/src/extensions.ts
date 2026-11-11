@@ -149,7 +149,7 @@ export type ExtensionsSyncState = {
 
 export type ExtensionsSyncApply = {
   id: string;
-  record: { on: boolean; inc: boolean; pin: boolean } | { removed: true };
+  record: { on?: boolean; inc?: boolean; pin?: boolean } | { removed: true };
   approval?: { v: string; fps: string[] };
 };
 

@@ -8,6 +8,7 @@ import { focusedWindowOf } from "../windows/ui";
 import { useBasePalette } from "./basePalette";
 import { CONFIG_FILE, launchRestoreSession, readConfig } from "./configSettings";
 import { schemaFiles } from "./configSchema";
+import { configureExtensions, resetConfiguredExtensionsForTests, startConfiguredExtensions } from "./configuredExtensions";
 import { reloadHooks } from "../automation/hookRules";
 
 const RECONCILE_DELAY_MS = 100;
@@ -25,6 +26,8 @@ let theme: Theme = { name: null, roles: null };
 let revision = 0;
 let windowsUp = false;
 let reported = new Set<string>();
+let fileProblems: string[] = [];
+let extensionProblems: string[] = [];
 let unshown: string[] = [];
 let watching: string | null | undefined;
 let schemas: Record<string, string> | null = null;
@@ -89,16 +92,20 @@ export function reconcileConfig() {
   const problems: string[] = [];
   const read = readConfigFile(CONFIG_FILE);
   let name = theme.name;
-  if (read.status === "missing") name = null;
-  else if (read.status !== "ok") problems.push(`${CONFIG_FILE}: ${READ_PROBLEMS[read.status]}`);
+  if (read.status === "missing") {
+    name = null;
+    configureExtensions([]);
+  } else if (read.status !== "ok") problems.push(`${CONFIG_FILE}: ${READ_PROBLEMS[read.status]}`);
   else {
     const config = readConfig(read.text, useBrowser.getState().settings);
     problems.push(...config.problems);
     if (Object.keys(config.patch).length) useBrowser.getState().updateSettings(config.patch);
     if (config.theme !== undefined) name = config.theme;
+    if (config.extensions !== undefined) configureExtensions(config.extensions);
   }
   applyTheme({ name, roles: readTheme(name, problems) });
-  report(problems);
+  fileProblems = problems;
+  report([...fileProblems, ...extensionProblems]);
   if (watching !== undefined) watchNames();
 }
 
@@ -129,6 +136,10 @@ export function startConfigFiles(roles: RolePalettes) {
   reconcileConfig();
   afterFirstWindow(() => {
     windowsUp = true;
+    startConfiguredExtensions((problems) => {
+      extensionProblems = problems;
+      report([...fileProblems, ...extensionProblems]);
+    });
     onConfigChange(changed);
     watchNames();
     writeSchemas();
@@ -137,6 +148,9 @@ export function startConfigFiles(roles: RolePalettes) {
 }
 
 export function resetConfigFilesForTests() {
+  resetConfiguredExtensionsForTests();
+  fileProblems = [];
+  extensionProblems = [];
   clearTimeout(timer);
   timer = undefined;
   defaults = null;

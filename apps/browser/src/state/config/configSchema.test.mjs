@@ -116,3 +116,11 @@ test("the schema files are written as 2-space JSON with a final newline", () => 
     assert.equal(text, `${JSON.stringify(JSON.parse(text), null, 2)}\n`);
   }
 });
+
+
+test("the extensions schema accepts Web Store IDs and rejects paths, URLs and malformed IDs", () => {
+  const schema = configSchema();
+  for (const value of [[], ["a".repeat(32)], ["b".repeat(32), "b".repeat(32)]]) assert.equal(accepts(schema, { extensions: value }), true);
+  for (const value of [null, "a".repeat(32), ["a".repeat(31)], ["A".repeat(32)], ["q".repeat(32)], [7], ["/tmp/extension"], ["https://example.com/ext"]]) assert.equal(accepts(schema, { extensions: value }), false);
+  assert.match(schema.properties.extensions.description, /Removing an ID stops new install requests/);
+});

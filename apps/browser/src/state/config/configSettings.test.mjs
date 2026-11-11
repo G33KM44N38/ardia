@@ -121,6 +121,33 @@ test("a shortcut equal to any of the command's defaults is no override, so the o
 });
 
 test("a settings key that is present but not an object is an error and applies nothing", () => {
-  assert.deepEqual(read(null), { patch: {}, theme: null, problems: ["config.json: settings must be an object"] });
-  assert.deepEqual(readConfig(JSON.stringify({ theme: "nord" }), DEFAULT_SETTINGS), { patch: {}, theme: "nord", problems: [] });
+  assert.deepEqual(read(null), { patch: {}, theme: null, extensions: [], problems: ["config.json: settings must be an object"] });
+  assert.deepEqual(readConfig(JSON.stringify({ theme: "nord" }), DEFAULT_SETTINGS), { patch: {}, theme: "nord", extensions: [], problems: [] });
+});
+
+
+test("extensions are deduplicated Chrome Web Store IDs, independent of settings", () => {
+  const a = "a".repeat(32);
+  const b = "b".repeat(32);
+  const parsed = read({}, { extensions: [a, b, a] });
+  assert.deepEqual(parsed.extensions, [a, b]);
+  assert.deepEqual(parsed.problems, []);
+  assert.deepEqual(read(7, { extensions: [a] }).extensions, [a]);
+  assert.deepEqual(read({}, {}).extensions, []);
+  assert.deepEqual(read({}, { extensions: [] }).extensions, []);
+});
+
+test("invalid extension lists retain the last desired set and report their exact position", () => {
+  for (const value of [null, "a".repeat(32), {}]) {
+    const parsed = read({}, { extensions: value });
+    assert.equal(parsed.extensions, undefined);
+    assert.deepEqual(parsed.problems, ["config.json: extensions must be a list of Chrome Web Store IDs"]);
+  }
+  for (const id of ["a".repeat(31), "a".repeat(33), "A".repeat(32), "q".repeat(32), 7, "https://chromewebstore.google.com/detail/" + "a".repeat(32), "a".repeat(32) + "\n"]) {
+    const parsed = read({ tabLayout: "top" }, { extensions: ["a".repeat(32), id] });
+    assert.equal(parsed.extensions, undefined);
+    assert.deepEqual(parsed.patch, { tabLayout: "top" });
+    assert.deepEqual(parsed.problems, ["config.json: extensions[1] must be a Chrome Web Store ID (32 lowercase letters a-p)"]);
+  }
+  assert.equal(readConfig("{", DEFAULT_SETTINGS).extensions, undefined);
 });
