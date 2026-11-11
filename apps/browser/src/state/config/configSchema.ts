@@ -3,6 +3,7 @@ import { JSON_SCHEMA_DIALECT, schemaJson, type JsonSchema } from "../../lib/json
 import { THEME_NAME, themeSchema, type RolePalettes } from "../../lib/themeFile";
 import { CONFIG_SETTING_KEYS } from "../settings/configAllowlist";
 import { SETTING_SPECS } from "../settings/settings";
+import { WEB_STORE_ID } from "./configExtensions";
 import { SHORTCUT_FORMAT, shortcutCatalog, shortcutDescription } from "./configShortcuts";
 import { launchActionIds, MAX_LAUNCH_ACTIONS } from "../automation/launchActions";
 
@@ -40,6 +41,12 @@ export function configSchema(): object {
     properties: {
       $schema: { type: "string" },
       theme: { type: ["string", "null"], pattern: THEME_NAME.source, description: "A theme in themes/<name>.json, or null for Ardia's own", default: null },
+      extensions: {
+        type: "array",
+        items: { type: "string", pattern: WEB_STORE_ID.source },
+        default: [],
+        description: "Chrome Web Store IDs to add to every opened profile, including future profiles. Existing disabled extensions stay disabled. New permissions need approval. Removing an ID stops new install requests. Downloads already requested may finish; installed extensions stay installed.",
+      },
       settings: {
         type: "object",
         properties: Object.fromEntries(CONFIG_SETTING_KEYS.map((key) => [key, settingSchema(key)])),

@@ -5,12 +5,13 @@ import { THEME_NAME } from "../../lib/themeFile";
 import { CONFIG_EXCLUDED_KEYS, isConfigSettingKey } from "../settings/configAllowlist";
 import { SETTING_SPECS, searchEngines, type SettingKey, type Settings } from "../settings/settings";
 import { configShortcuts } from "./configShortcuts";
+import { configExtensions } from "./configExtensions";
 import { parseLaunchAction } from "../automation/launchActions";
 import { readProviderEntries } from "@ardia/core";
 
 export const CONFIG_FILE = "config.json";
 
-export type ConfigRead = { patch: Partial<Settings>; theme: string | null | undefined; problems: string[] };
+export type ConfigRead = { patch: Partial<Settings>; theme: string | null | undefined; extensions: string[] | undefined; problems: string[] };
 
 const EXCLUDED: ReadonlySet<string> = new Set(CONFIG_EXCLUDED_KEYS);
 
@@ -136,11 +137,12 @@ function requested(doc: Record<string, unknown>, settings: Settings): Requested 
 
 export function readConfig(text: string, settings: Settings): ConfigRead {
   const parsed = parsedConfig(text);
-  if ("problem" in parsed) return { patch: {}, theme: undefined, problems: [parsed.problem] };
+  if ("problem" in parsed) return { patch: {}, theme: undefined, extensions: undefined, problems: [parsed.problem] };
   const { values, theme, problems } = requested(parsed.doc, settings);
+  const extensions = configExtensions(parsed.doc, problems);
   const patch: Partial<Record<SettingKey, unknown>> = {};
   for (const [key, value] of Object.entries(values) as [SettingKey, unknown][]) if (!sameValue(value, settings[key])) patch[key] = value;
-  return { patch: patch as Partial<Settings>, theme, problems };
+  return { patch: patch as Partial<Settings>, theme, extensions, problems };
 }
 
 export function launchRestoreSession(text: string, settings: Settings): boolean | undefined {

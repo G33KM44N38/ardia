@@ -12,9 +12,10 @@ For the architecture and the test tooling, read `docs/agent-brief.md`.
 - **Speed is the point.** Do independent work in parallel: agents, builds, test instances, tool calls. Batch what you
   plan to check into one script or one call instead of one step at a time. Only timing measurements run one at a
   time, interleaved with their control, because sharing the CPU skews them.
-- **Orchestrate.** The main session plans, hands implementation to Opus subagents, and verifies what they
-  return (build, run, capture). Give each agent its own files, its own derived-data dir and its own
-  `ARDIA_DATA_DIR`.
+- **Orchestrate.** The main session plans, delegates implementation to Codex subagents, and verifies what they
+  return (build, run, capture). Use the available Codex provider without asking the owner to approve
+  replacing an unavailable provider. Honor an explicit model choice for the current task. Give each
+  agent its own files, its own derived-data dir and its own `ARDIA_DATA_DIR`.
 - **Watch the agents.** Every ~30 minutes the main session checks any agent it hasn't heard from (last
   transcript activity, a pending tool call, `/tmp/ac-*.holder`, its processes). A stuck agent means a root
   cause to fix (a lock, a wait, a hang), not just a restart. Send new feedback to the agent that owns

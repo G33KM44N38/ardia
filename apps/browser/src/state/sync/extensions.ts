@@ -1,5 +1,5 @@
 import { useBrowser } from "../browser/store";
-import { applyExtensionsSync, extensionsSyncState, onExtensionsSync, type ExtensionsSyncApply } from "../../platform/extensions";
+import { applyExtensionsSync, extensionsSyncState, listExtensions, onExtensionsSync, type ExtensionsSyncApply } from "../../platform/extensions";
 import { readDocument, writeDocument } from "../../platform/documents";
 import { extensionsAdapter, type ExtensionChange, type ExtensionIntent, type ExtensionsAdapter, type LocalExtensions } from "../../platform/sync";
 import { engineProfile } from "../browser/model";
@@ -13,6 +13,14 @@ const DOC_MIGRATIONS: Migrations = { 0: unchanged };
 type Intents = { generation: number; profiles: Record<string, Record<string, ExtensionIntent>> };
 
 let intents: Intents | null = null;
+const changes = new Map<string, Promise<unknown>>();
+
+function serialized<T>(profile: string, work: () => Promise<T>): Promise<T> {
+  const next = (changes.get(profile) ?? Promise.resolve()).catch(() => {}).then(work);
+  changes.set(profile, next);
+  void next.finally(() => { if (changes.get(profile) === next) changes.delete(profile); }).catch(() => {});
+  return next;
+}
 
 function stored(): Intents {
   if (intents) return intents;
@@ -33,7 +41,7 @@ function note(profile: string, id: string, kind: ExtensionIntent["kind"]) {
   save();
 }
 
-async function stateOf(profile: string): Promise<LocalExtensions> {
+async function stateOf(profile: string) {
   const { intents, ...state } = await extensionsSyncState(profile);
   for (const i of intents) note(profile, i.id, i.kind);
   return state;
@@ -41,7 +49,7 @@ async function stateOf(profile: string): Promise<LocalExtensions> {
 
 async function readLocal(profile: string): Promise<LocalExtensions | null> {
   try {
-    return await stateOf(profile);
+    return await serialized(profile, () => stateOf(profile));
   } catch {
     return null;
   }
@@ -51,11 +59,36 @@ const changeListeners = new Set<(profile: string) => void>();
 
 export const onSyncedExtensionChange = (listener: (profile: string) => void) => void changeListeners.add(listener);
 
+export function addConfiguredExtensions(profile: string, ids: string[], current: () => boolean) {
+  return serialized(profile, async () => {
+    const results: { id: string; state: string }[] = [];
+    if (!current()) return { ready: true, results };
+    const installed = new Set((await listExtensions(profile)).map((extension) => extension.id));
+    if (!current()) return { ready: true, results };
+    const missing = ids.filter((id) => !installed.has(id));
+    const state = missing.length ? await stateOf(profile) : null;
+    if (state && !state.ready) return { ready: false, results };
+    for (const id of ids) {
+      if (!current()) break;
+      if (installed.has(id) || state?.extensions.some((extension) => extension.id === id)) results.push({ id, state: "kept" });
+      else if (state?.pending.includes(id) || state?.settling.includes(id)) results.push({ id, state: "pending" });
+      else if (state?.queued.includes(id)) results.push({ id, state: "queued" });
+      else {
+        const installed = (await listExtensions(profile)).some((extension) => extension.id === id);
+        if (!current()) break;
+        const result = installed ? { state: "kept" } : await applyExtensionsSync(profile, { id, record: {} });
+        results.push({ id, ...result });
+      }
+    }
+    return { ready: true, results };
+  });
+}
+
 async function change(profile: string, c: ExtensionChange): Promise<boolean> {
   const apply: ExtensionsSyncApply =
     c.kind === "cancel" ? { id: c.id, record: { removed: true } } : { id: c.id, record: c.record, ...(c.approval ? { approval: c.approval } : {}) };
   try {
-    await applyExtensionsSync(profile, apply);
+    await serialized(profile, () => applyExtensionsSync(profile, apply));
     return true;
   } catch (error) {
     console.warn(`[sync] extension ${c.kind} ${c.id} failed`, error);

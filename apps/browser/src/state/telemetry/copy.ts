@@ -63,6 +63,7 @@ export const WHATS_SENT: { title: string; items: string[] }[] = [
       "Whether a profile switch came from the sidebar's profile switcher, whether it showed icons or dots, and whether it came within 2 seconds of a switcher press for a different profile (a corrected mis-click)",
       "The kind of command bar row you pick: history, bookmark, tab, address, search, calculator or action",
       "Installing an extension, turning sync on or off, translating a page, and which Settings sections you open",
+      "Configured extensions: counts and outcomes such as queued, already installed, blocked, failed or timed out. No extension IDs or profile names",
       "Once a day, your on/off, pick-one and number settings (like light or dark, glass or classic, and how much tint) and which app icon you picked, each with its default. Never addresses, names, search engines or anything you typed",
       "Bringing your last window back from the Dock or at launch: how many tabs came back and how long it was closed, in rough ranges, and whether a pinned tab was showing",
     ],
